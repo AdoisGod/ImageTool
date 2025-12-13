@@ -28,6 +28,7 @@ public class ImageCanvas : Control
     public Mat? GrayImage => _grayImage;
     public IReadOnlyList<MeasurementResult> Results => _results;
     public MeasurementResult? SelectedResult => _selectedResult;
+    public double? TrueEdgePosition { get; set; }
 
     public ImageCanvas()
     {
@@ -62,6 +63,11 @@ public class ImageCanvas : Control
             circleTool.SetImage(_grayImage);
         else if (tool is LineFinderTool lineTool && _grayImage != null)
             lineTool.SetImage(_grayImage);
+        else if (tool is SubpixelEdgeTool subpixelTool && _grayImage != null)
+        {
+            subpixelTool.SetImage(_grayImage);
+            subpixelTool.SetTrueEdgePosition(TrueEdgePosition);
+        }
 
         Cursor = tool?.ToolCursor ?? Cursors.Default;
         Invalidate();

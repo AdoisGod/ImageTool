@@ -4,6 +4,7 @@ using VisionMeasurementToolkit.Core;
 using VisionMeasurementToolkit.Dialogs;
 using VisionMeasurementToolkit.Tools;
 using VisionMeasurementToolkit.Utils;
+using DrawingSize = System.Drawing.Size;
 
 namespace VisionMeasurementToolkit;
 
@@ -26,6 +27,7 @@ public partial class MainForm : Form
     private readonly LineFinderTool _lineFinderTool = new();
     private readonly PointToPointTool _pointToPointTool = new();
     private readonly AngleTool _angleTool = new();
+    private readonly SubpixelEdgeTool _subpixelEdgeTool = new();
 
     public MainForm()
     {
@@ -38,9 +40,9 @@ public partial class MainForm : Form
     private void InitializeComponent()
     {
         Text = "Vision Measurement Toolkit - 影像量測工具集";
-        Size = new Size(1400, 900);
+        Size = new DrawingSize(1400, 900);
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(1100, 700);
+        MinimumSize = new DrawingSize(1100, 700);
 
         CreateMenuStrip();
         CreateToolStrip();
@@ -54,7 +56,10 @@ public partial class MainForm : Form
 
         // 檔案選單
         var fileMenu = new ToolStripMenuItem("檔案(&F)");
-        fileMenu.DropDownItems.Add("開啟(&O)", null, (s, e) => LoadImage()).ShortcutKeys = Keys.Control | Keys.O;
+        var openItem = new ToolStripMenuItem("開啟(&O)", null, (s, e) => LoadImage()) { ShortcutKeys = Keys.Control | Keys.O };
+        fileMenu.DropDownItems.Add(openItem);
+        fileMenu.DropDownItems.Add(new ToolStripSeparator());
+        fileMenu.DropDownItems.Add("合成測試影像", null, (s, e) => GenerateSyntheticImage());
         fileMenu.DropDownItems.Add(new ToolStripSeparator());
         fileMenu.DropDownItems.Add("匯出 CSV", null, (s, e) => ExportCsv());
         fileMenu.DropDownItems.Add("匯出報告 (HTML)", null, (s, e) => ExportHtml());
@@ -65,10 +70,17 @@ public partial class MainForm : Form
 
         // 工具選單
         var toolMenu = new ToolStripMenuItem("工具(&T)");
-        toolMenu.DropDownItems.Add("找圓 (&1)", null, (s, e) => SelectTool(_circleFinderTool)).ShortcutKeys = Keys.D1;
-        toolMenu.DropDownItems.Add("找線 (&2)", null, (s, e) => SelectTool(_lineFinderTool)).ShortcutKeys = Keys.D2;
-        toolMenu.DropDownItems.Add("點到點 (&3)", null, (s, e) => SelectTool(_pointToPointTool)).ShortcutKeys = Keys.D3;
-        toolMenu.DropDownItems.Add("角度 (&4)", null, (s, e) => SelectTool(_angleTool)).ShortcutKeys = Keys.D4;
+        var circleItem = new ToolStripMenuItem("找圓 (&1)", null, (s, e) => SelectTool(_circleFinderTool)) { ShortcutKeys = Keys.D1 };
+        var lineItem = new ToolStripMenuItem("找線 (&2)", null, (s, e) => SelectTool(_lineFinderTool)) { ShortcutKeys = Keys.D2 };
+        var p2pItem = new ToolStripMenuItem("點到點 (&3)", null, (s, e) => SelectTool(_pointToPointTool)) { ShortcutKeys = Keys.D3 };
+        var angleItem = new ToolStripMenuItem("角度 (&4)", null, (s, e) => SelectTool(_angleTool)) { ShortcutKeys = Keys.D4 };
+        var subpixelItem = new ToolStripMenuItem("亞像素邊緣分析 (&5)", null, (s, e) => SelectTool(_subpixelEdgeTool)) { ShortcutKeys = Keys.D5 };
+        toolMenu.DropDownItems.Add(circleItem);
+        toolMenu.DropDownItems.Add(lineItem);
+        toolMenu.DropDownItems.Add(p2pItem);
+        toolMenu.DropDownItems.Add(angleItem);
+        toolMenu.DropDownItems.Add(new ToolStripSeparator());
+        toolMenu.DropDownItems.Add(subpixelItem);
         toolMenu.DropDownItems.Add(new ToolStripSeparator());
         toolMenu.DropDownItems.Add("清除所有結果", null, (s, e) => ClearAllResults());
         menuStrip.Items.Add(toolMenu);
@@ -95,17 +107,15 @@ public partial class MainForm : Form
         var toolStrip = new ToolStrip();
 
         toolStrip.Items.Add(new ToolStripButton("開啟", null, (s, e) => LoadImage()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolStrip.Items.Add(new ToolStripButton("合成影像", null, (s, e) => GenerateSyntheticImage()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolStrip.Items.Add(new ToolStripSeparator());
 
-        var circleBtn = new ToolStripButton("找圓", null, (s, e) => SelectTool(_circleFinderTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text };
-        var lineBtn = new ToolStripButton("找線", null, (s, e) => SelectTool(_lineFinderTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text };
-        var p2pBtn = new ToolStripButton("點到點", null, (s, e) => SelectTool(_pointToPointTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text };
-        var angleBtn = new ToolStripButton("角度", null, (s, e) => SelectTool(_angleTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text };
-
-        toolStrip.Items.Add(circleBtn);
-        toolStrip.Items.Add(lineBtn);
-        toolStrip.Items.Add(p2pBtn);
-        toolStrip.Items.Add(angleBtn);
+        toolStrip.Items.Add(new ToolStripButton("找圓", null, (s, e) => SelectTool(_circleFinderTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolStrip.Items.Add(new ToolStripButton("找線", null, (s, e) => SelectTool(_lineFinderTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolStrip.Items.Add(new ToolStripButton("點到點", null, (s, e) => SelectTool(_pointToPointTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolStrip.Items.Add(new ToolStripButton("角度", null, (s, e) => SelectTool(_angleTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolStrip.Items.Add(new ToolStripSeparator());
+        toolStrip.Items.Add(new ToolStripButton("亞像素邊緣", null, (s, e) => SelectTool(_subpixelEdgeTool)) { DisplayStyle = ToolStripItemDisplayStyle.Text, Font = new Font(Font, FontStyle.Bold) });
 
         toolStrip.Items.Add(new ToolStripSeparator());
         toolStrip.Items.Add(new ToolStripButton("校正", null, (s, e) => SetResolution()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
@@ -119,7 +129,7 @@ public partial class MainForm : Form
     {
         var statusStrip = new StatusStrip();
 
-        _toolLabel = new ToolStripStatusLabel("工具: 無") { AutoSize = false, Width = 120 };
+        _toolLabel = new ToolStripStatusLabel("工具: 無") { AutoSize = false, Width = 150 };
         _mouseLabel = new ToolStripStatusLabel("座標: -") { AutoSize = false, Width = 150 };
         _resolutionLabel = new ToolStripStatusLabel("解析度: 未校正") { AutoSize = false, Width = 200 };
         _statusLabel = new ToolStripStatusLabel("就緒") { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
@@ -134,11 +144,11 @@ public partial class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 200,
+            SplitterDistance = 180,
             FixedPanel = FixedPanel.Panel1
         };
 
-        // 左側：工具面板（簡化為按鈕列）
+        // 左側：工具面板
         var toolPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -147,13 +157,15 @@ public partial class MainForm : Form
             AutoScroll = true
         };
 
-        var btnSize = new System.Drawing.Size(150, 40);
+        var btnSize = new DrawingSize(140, 35);
         toolPanel.Controls.Add(CreateToolButton("找圓 (1)", () => SelectTool(_circleFinderTool), btnSize));
         toolPanel.Controls.Add(CreateToolButton("找線 (2)", () => SelectTool(_lineFinderTool), btnSize));
         toolPanel.Controls.Add(CreateToolButton("點到點 (3)", () => SelectTool(_pointToPointTool), btnSize));
         toolPanel.Controls.Add(CreateToolButton("角度 (4)", () => SelectTool(_angleTool), btnSize));
-        toolPanel.Controls.Add(new Label { Text = "", Height = 20 });
-        toolPanel.Controls.Add(CreateToolButton("校正", SetResolution, btnSize));
+        toolPanel.Controls.Add(new Label { Text = "─────────", AutoSize = true, ForeColor = Color.Gray });
+        toolPanel.Controls.Add(CreateToolButton("亞像素邊緣 (5)", () => SelectTool(_subpixelEdgeTool), btnSize, Color.DarkBlue));
+        toolPanel.Controls.Add(new Label { Text = "", Height = 10 });
+        toolPanel.Controls.Add(CreateToolButton("校正設定", SetResolution, btnSize));
 
         mainSplit.Panel1.Controls.Add(toolPanel);
 
@@ -162,7 +174,7 @@ public partial class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 800
+            SplitterDistance = 750
         };
 
         // 影像區
@@ -187,8 +199,8 @@ public partial class MainForm : Form
             RowCount = 2,
             ColumnCount = 1
         };
-        resultPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
-        resultPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        resultPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+        resultPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
 
         // 結果列表
         _resultGrid = new DataGridView
@@ -205,8 +217,8 @@ public partial class MainForm : Form
         _resultGrid.Columns.Add("Type", "類型");
         _resultGrid.Columns.Add("Name", "名稱");
         _resultGrid.Columns.Add("Summary", "摘要");
-        _resultGrid.Columns["Type"]!.Width = 50;
-        _resultGrid.Columns["Name"]!.Width = 60;
+        _resultGrid.Columns["Type"]!.Width = 60;
+        _resultGrid.Columns["Name"]!.Width = 70;
         _resultGrid.SelectionChanged += ResultGrid_SelectionChanged;
         _resultGrid.KeyDown += ResultGrid_KeyDown;
 
@@ -220,8 +232,9 @@ public partial class MainForm : Form
             Dock = DockStyle.Fill,
             Multiline = true,
             ReadOnly = true,
-            Font = new Font("Consolas", 10),
-            ScrollBars = ScrollBars.Vertical
+            Font = new Font("Consolas", 9.5f),
+            ScrollBars = ScrollBars.Vertical,
+            BackColor = Color.White
         };
         var detailGroup = new GroupBox { Text = "詳細資訊", Dock = DockStyle.Fill, Padding = new Padding(5) };
         detailGroup.Controls.Add(_detailsBox);
@@ -233,7 +246,7 @@ public partial class MainForm : Form
         Controls.Add(mainSplit);
     }
 
-    private Button CreateToolButton(string text, Action onClick, System.Drawing.Size size)
+    private Button CreateToolButton(string text, Action onClick, DrawingSize size, Color? foreColor = null)
     {
         var btn = new Button
         {
@@ -241,6 +254,8 @@ public partial class MainForm : Form
             Size = size,
             FlatStyle = FlatStyle.Flat
         };
+        if (foreColor.HasValue)
+            btn.ForeColor = foreColor.Value;
         btn.Click += (s, e) => onClick();
         return btn;
     }
@@ -251,6 +266,8 @@ public partial class MainForm : Form
         _lineFinderTool.MeasurementCompleted += OnMeasurementCompleted;
         _pointToPointTool.MeasurementCompleted += OnMeasurementCompleted;
         _angleTool.MeasurementCompleted += OnMeasurementCompleted;
+        _subpixelEdgeTool.MeasurementCompleted += OnMeasurementCompleted;
+        _subpixelEdgeTool.AnalysisCompleted += OnSubpixelAnalysisCompleted;
     }
 
     private void SetupShortcuts()
@@ -270,6 +287,12 @@ public partial class MainForm : Form
         _imageCanvas.AddResult(result);
         UpdateResultGrid();
         _statusLabel.Text = $"完成: {result.GetSummary(_calibration.Resolution)}";
+    }
+
+    private void OnSubpixelAnalysisCompleted(object? sender, SubpixelAnalysisResult result)
+    {
+        // 顯示亞像素分析結果
+        ShowSubpixelAnalysisResult(result);
     }
 
     private void SelectTool(ITool tool)
@@ -305,7 +328,6 @@ public partial class MainForm : Form
                 return;
             }
 
-            // 轉換為 Bitmap 顯示
             using var colorMat = new Mat();
             Cv2.CvtColor(mat, colorMat, ColorConversionCodes.GRAY2BGR);
             var bitmap = MatToBitmap(colorMat);
@@ -319,6 +341,41 @@ public partial class MainForm : Form
         catch (Exception ex)
         {
             MessageBox.Show($"載入失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void GenerateSyntheticImage()
+    {
+        using var dialog = new SyntheticImageDialog();
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            try
+            {
+                var mat = TestImageGenerator.GenerateSyntheticEdgeImage(
+                    dialog.Parameters.Width,
+                    dialog.Parameters.Height,
+                    dialog.Parameters.EdgePosition,
+                    dialog.Parameters.LeftGray,
+                    dialog.Parameters.RightGray,
+                    dialog.Parameters.BlurSigma,
+                    dialog.Parameters.AddNoise,
+                    dialog.Parameters.NoiseSigma);
+
+                using var colorMat = new Mat();
+                Cv2.CvtColor(mat, colorMat, ColorConversionCodes.GRAY2BGR);
+                var bitmap = MatToBitmap(colorMat);
+
+                _imageCanvas.SetImage(bitmap, mat);
+                _imageCanvas.TrueEdgePosition = dialog.Parameters.EdgePosition;
+                _currentImagePath = null;
+                _statusLabel.Text = $"合成影像 ({dialog.Parameters.Width}x{dialog.Parameters.Height})，真實邊緣: {dialog.Parameters.EdgePosition:F2}px";
+
+                mat.Dispose();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"產生失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 
@@ -434,8 +491,8 @@ public partial class MainForm : Form
         {
             sb.AppendLine($"點 1: ({p2p.Point1.X:F2}, {p2p.Point1.Y:F2}) px");
             sb.AppendLine($"點 2: ({p2p.Point2.X:F2}, {p2p.Point2.Y:F2}) px");
-            sb.AppendLine($"水平距離: {p2p.HorizontalDistance:F3} px ({_calibration.PixelsToMm(p2p.HorizontalDistance):F4} mm)");
-            sb.AppendLine($"垂直距離: {p2p.VerticalDistance:F3} px ({_calibration.PixelsToMm(p2p.VerticalDistance):F4} mm)");
+            sb.AppendLine($"水平距離: {p2p.HorizontalDistance:F3} px");
+            sb.AppendLine($"垂直距離: {p2p.VerticalDistance:F3} px");
             sb.AppendLine($"直線距離: {p2p.Distance:F3} px ({_calibration.PixelsToMm(p2p.Distance):F4} mm)");
             sb.AppendLine($"角度: {p2p.AngleDegrees:F3}°");
         }
@@ -447,6 +504,60 @@ public partial class MainForm : Form
             sb.AppendLine($"夾角: {angle.Angle:F3}°");
             sb.AppendLine($"補角: {angle.SupplementaryAngle:F3}°");
         }
+        else if (result is SubpixelEdgeResult subpixel)
+        {
+            sb.AppendLine($"ROI: ({subpixel.RoiStart.X:F1},{subpixel.RoiStart.Y:F1}) → ({subpixel.RoiEnd.X:F1},{subpixel.RoiEnd.Y:F1})");
+            sb.AppendLine();
+            sb.AppendLine("═══ 亞像素邊緣檢測比較 ═══");
+            sb.AppendLine();
+            foreach (var r in subpixel.MethodResults)
+            {
+                string pos = r.Position.HasValue ? $"{r.Position.Value:F3}" : "FAILED";
+                string err = r.Error.HasValue ? $"{(r.Error.Value >= 0 ? "+" : "")}{r.Error.Value:F3}" : "-";
+                string rsq = r.RSquared.HasValue ? $"R²={r.RSquared.Value:F3}" : "";
+                sb.AppendLine($"【{r.MethodName,-10}】");
+                sb.AppendLine($"  位置: {pos} px");
+                sb.AppendLine($"  誤差: {err} px");
+                sb.AppendLine($"  耗時: {r.ElapsedMs:F2} ms");
+                if (!string.IsNullOrEmpty(rsq))
+                    sb.AppendLine($"  品質: {rsq}");
+                sb.AppendLine();
+            }
+        }
+
+        _detailsBox.Text = sb.ToString();
+    }
+
+    private void ShowSubpixelAnalysisResult(SubpixelAnalysisResult result)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("═══════════════════════════════════");
+        sb.AppendLine("    亞像素邊緣檢測分析結果");
+        sb.AppendLine("═══════════════════════════════════");
+        sb.AppendLine();
+
+        if (result.TrueEdgePosition.HasValue)
+        {
+            sb.AppendLine($"真實邊緣位置: {result.TrueEdgePosition.Value:F3} px");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"{"方法",-12} {"位置(px)",10} {"誤差(px)",10} {"耗時(ms)",10} {"品質",12}");
+        sb.AppendLine(new string('-', 56));
+
+        foreach (var r in result.Results)
+        {
+            string pos = r.Position.HasValue ? $"{r.Position.Value:F3}" : "FAILED";
+            string err = r.Error.HasValue ? $"{(r.Error.Value >= 0 ? "+" : "")}{r.Error.Value:F3}" : "-";
+            string elapsed = $"{r.ElapsedMs:F2}";
+            string quality = r.RSquared.HasValue ? $"R²={r.RSquared.Value:F3}" : "-";
+
+            sb.AppendLine($"{r.MethodName,-12} {pos,10} {err,10} {elapsed,10} {quality,12}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"剖面取樣點數: {result.GrayProfile.Length}");
+        sb.AppendLine($"梯度點數: {result.GradientProfile.Length}");
 
         _detailsBox.Text = sb.ToString();
     }
@@ -475,12 +586,11 @@ public partial class MainForm : Form
         var circles = _imageCanvas.Results.OfType<CircleResult>().ToList();
         if (circles.Count == 0)
         {
-            MessageBox.Show("請先使用「找圓」工具檢測一個標準圓", "提示",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("請先使用「找圓」工具檢測一個標準圓", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        var circle = circles[^1]; // 使用最後一個圓
+        var circle = circles[^1];
         using var dialog = new CircleCalibrationDialog(circle.DiameterPixels);
         if (dialog.ShowDialog() == DialogResult.OK)
         {
@@ -532,7 +642,6 @@ public partial class MainForm : Form
 
         if (dialog.ShowDialog() == DialogResult.OK)
         {
-            // 截取畫布圖片
             string? imageBase64 = null;
             try
             {
@@ -575,10 +684,15 @@ public partial class MainForm : Form
             "• 找線（卡尺法）\n" +
             "• 點到點距離\n" +
             "• 角度量測\n" +
+            "• 亞像素邊緣檢測比較\n" +
+            "  - Parabolic Fit\n" +
+            "  - Gaussian Fit\n" +
+            "  - Moment Method\n" +
+            "  - Sigmoid Fit\n" +
             "• 像素解析度校正\n\n" +
             "快捷鍵：\n" +
             "• Ctrl+O: 開啟影像\n" +
-            "• 1-4: 切換工具\n" +
+            "• 1-5: 切換工具\n" +
             "• Delete: 刪除選取結果\n" +
             "• Escape: 取消操作\n" +
             "• 滾輪: 縮放影像\n" +

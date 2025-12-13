@@ -1,4 +1,5 @@
 using OpenCvSharp;
+using MathNet.Numerics;
 
 namespace VisionMeasurementToolkit.Utils;
 
@@ -47,6 +48,41 @@ public static class TestImageGenerator
         var noise = new Mat(height, width, MatType.CV_8UC1);
         Cv2.Randn(noise, new Scalar(0), new Scalar(10));
         Cv2.Add(image, noise, image);
+
+        return image;
+    }
+
+    /// <summary>
+    /// 生成亞像素邊緣測試影像（垂直邊緣）
+    /// </summary>
+    public static Mat GenerateSyntheticEdgeImage(int width, int height, double edgePosition,
+        int leftGray, int rightGray, double blurSigma, bool addNoise, double noiseSigma)
+    {
+        var image = new Mat(height, width, MatType.CV_8UC1);
+        var random = new Random();
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                // 使用 erf 函數產生平滑邊緣
+                double z = (x - edgePosition) / (blurSigma * Math.Sqrt(2));
+                double ratio = (1 + SpecialFunctions.Erf(z)) / 2.0;
+                double grayValue = leftGray + (rightGray - leftGray) * ratio;
+
+                // 加入雜訊
+                if (addNoise)
+                {
+                    double u1 = 1.0 - random.NextDouble();
+                    double u2 = 1.0 - random.NextDouble();
+                    double noise = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2) * noiseSigma;
+                    grayValue += noise;
+                }
+
+                grayValue = Math.Clamp(grayValue, 0, 255);
+                image.Set(y, x, (byte)grayValue);
+            }
+        }
 
         return image;
     }
