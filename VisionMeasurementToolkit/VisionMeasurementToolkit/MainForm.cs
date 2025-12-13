@@ -70,17 +70,12 @@ public partial class MainForm : Form
 
         // 工具選單
         var toolMenu = new ToolStripMenuItem("工具(&T)");
-        var circleItem = new ToolStripMenuItem("找圓 (&1)", null, (s, e) => SelectTool(_circleFinderTool)) { ShortcutKeys = Keys.D1 };
-        var lineItem = new ToolStripMenuItem("找線 (&2)", null, (s, e) => SelectTool(_lineFinderTool)) { ShortcutKeys = Keys.D2 };
-        var p2pItem = new ToolStripMenuItem("點到點 (&3)", null, (s, e) => SelectTool(_pointToPointTool)) { ShortcutKeys = Keys.D3 };
-        var angleItem = new ToolStripMenuItem("角度 (&4)", null, (s, e) => SelectTool(_angleTool)) { ShortcutKeys = Keys.D4 };
-        var subpixelItem = new ToolStripMenuItem("亞像素邊緣分析 (&5)", null, (s, e) => SelectTool(_subpixelEdgeTool)) { ShortcutKeys = Keys.D5 };
-        toolMenu.DropDownItems.Add(circleItem);
-        toolMenu.DropDownItems.Add(lineItem);
-        toolMenu.DropDownItems.Add(p2pItem);
-        toolMenu.DropDownItems.Add(angleItem);
+        toolMenu.DropDownItems.Add("找圓 (1)", null, (s, e) => SelectTool(_circleFinderTool));
+        toolMenu.DropDownItems.Add("找線 (2)", null, (s, e) => SelectTool(_lineFinderTool));
+        toolMenu.DropDownItems.Add("點到點 (3)", null, (s, e) => SelectTool(_pointToPointTool));
+        toolMenu.DropDownItems.Add("角度 (4)", null, (s, e) => SelectTool(_angleTool));
         toolMenu.DropDownItems.Add(new ToolStripSeparator());
-        toolMenu.DropDownItems.Add(subpixelItem);
+        toolMenu.DropDownItems.Add("亞像素邊緣分析 (5)", null, (s, e) => SelectTool(_subpixelEdgeTool));
         toolMenu.DropDownItems.Add(new ToolStripSeparator());
         toolMenu.DropDownItems.Add("清除所有結果", null, (s, e) => ClearAllResults());
         menuStrip.Items.Add(toolMenu);
@@ -275,9 +270,38 @@ public partial class MainForm : Form
         KeyPreview = true;
         KeyDown += (s, e) =>
         {
-            if (e.KeyCode == Keys.Delete && _imageCanvas.SelectedResult != null)
+            // 工具切換快捷鍵 (1-5)
+            switch (e.KeyCode)
             {
-                DeleteSelectedResult();
+                case Keys.D1:
+                case Keys.NumPad1:
+                    SelectTool(_circleFinderTool);
+                    e.Handled = true;
+                    break;
+                case Keys.D2:
+                case Keys.NumPad2:
+                    SelectTool(_lineFinderTool);
+                    e.Handled = true;
+                    break;
+                case Keys.D3:
+                case Keys.NumPad3:
+                    SelectTool(_pointToPointTool);
+                    e.Handled = true;
+                    break;
+                case Keys.D4:
+                case Keys.NumPad4:
+                    SelectTool(_angleTool);
+                    e.Handled = true;
+                    break;
+                case Keys.D5:
+                case Keys.NumPad5:
+                    SelectTool(_subpixelEdgeTool);
+                    e.Handled = true;
+                    break;
+                case Keys.Delete:
+                    if (_imageCanvas.SelectedResult != null)
+                        DeleteSelectedResult();
+                    break;
             }
         };
     }
