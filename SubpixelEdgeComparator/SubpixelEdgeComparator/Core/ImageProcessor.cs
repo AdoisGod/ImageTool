@@ -214,7 +214,35 @@ public class ImageProcessor : IDisposable
         using var colorImage = new Mat();
         Cv2.CvtColor(_currentImage, colorImage, ColorConversionCodes.GRAY2BGR);
 
-        return OpenCvSharp.Extensions.BitmapConverter.ToBitmap(colorImage);
+        // 手動轉換 Mat 到 Bitmap
+        var bitmap = new System.Drawing.Bitmap(colorImage.Width, colorImage.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        var bmpData = bitmap.LockBits(
+            new System.Drawing.Rectangle(0, 0, bitmap.Width, bitmap.Height),
+            System.Drawing.Imaging.ImageLockMode.WriteOnly,
+            bitmap.PixelFormat);
+
+        int stride = bmpData.Stride;
+        int width = colorImage.Width;
+        int height = colorImage.Height;
+
+        unsafe
+        {
+            byte* dst = (byte*)bmpData.Scan0;
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    var pixel = colorImage.At<OpenCvSharp.Vec3b>(y, x);
+                    int idx = y * stride + x * 3;
+                    dst[idx] = pixel.Item0;     // B
+                    dst[idx + 1] = pixel.Item1; // G
+                    dst[idx + 2] = pixel.Item2; // R
+                }
+            }
+        }
+
+        bitmap.UnlockBits(bmpData);
+        return bitmap;
     }
 
     private void UpdateImageData()

@@ -397,16 +397,19 @@ public partial class MainForm : Form
                     StrokeThickness = 2,
                     Text = result.MethodName,
                     TextColor = color,
-                    TextVerticalAlignment = VerticalAlignment.Top,
-                    TextHorizontalAlignment = HorizontalAlignment.Left
+                    TextVerticalAlignment = OxyPlot.VerticalAlignment.Top,
+                    TextHorizontalAlignment = OxyPlot.HorizontalAlignment.Left
                 };
                 model.Annotations.Add(annotation);
             }
         }
 
         // 圖例
-        model.LegendPosition = LegendPosition.TopRight;
-        model.LegendPlacement = LegendPlacement.Inside;
+        model.Legends.Add(new OxyPlot.Legends.Legend
+        {
+            LegendPosition = OxyPlot.Legends.LegendPosition.TopRight,
+            LegendPlacement = OxyPlot.Legends.LegendPlacement.Inside
+        });
 
         _gradientPlot.Model = model;
     }
