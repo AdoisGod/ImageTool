@@ -120,7 +120,7 @@ public class DetectionPage : UserControl
             AutoScroll = true,
             Padding = new Padding(5)
         };
-        var toolOptionsLabel = new Label { Text = "工具參數", Dock = DockStyle.Top, Height = 20, Font = new Font(Font, FontStyle.Bold) };
+        var toolOptionsLabel = new Label { Text = "工具參數", Dock = DockStyle.Top, Height = 20, Font = new Font("Microsoft JhengHei", 9, FontStyle.Bold) };
         _toolOptions.Controls.Add(toolOptionsLabel);
 
         // 屬性 (填滿)
