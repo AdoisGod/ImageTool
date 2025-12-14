@@ -28,6 +28,7 @@ public class DetectionPage : UserControl
     private bool _useOriginalImage = false;
     private bool _isSelectingObject = false; // 防止選取事件無限遞迴
     private readonly List<IGeometryObject> _multiSelectedObjects = new(); // 多選物件
+    private string? _currentMeasureMode = null; // 當前量測模式: "距離" 或 "角度"
 
     public DetectionPage(ImageManager imageManager, CalibrationManager calibration)
     {
@@ -82,10 +83,10 @@ public class DetectionPage : UserControl
         _toolCombo.SelectedIndex = 0;
         _toolCombo.SelectedIndexChanged += ToolCombo_SelectedIndexChanged;
 
-        var detectBtn = new Button { Text = "執行檢測", Location = new System.Drawing.Point(230, 6), Width = 80, Height = 26 };
-        detectBtn.Click += (s, e) => ExecuteDetection();
+        var detectBtn = new Button { Text = "執行", Location = new System.Drawing.Point(230, 6), Width = 60, Height = 26 };
+        detectBtn.Click += (s, e) => ExecuteCurrentTool();
 
-        var tipLabel = new Label { Text = "提示: 在影像上框選 ROI 區域", Location = new System.Drawing.Point(320, 10), AutoSize = true, ForeColor = Color.Gray };
+        var tipLabel = new Label { Text = "提示: 框選ROI或Ctrl+點擊多選物件", Location = new System.Drawing.Point(295, 10), AutoSize = true, ForeColor = Color.Gray };
 
         toolSelectPanel.Controls.AddRange(new Control[] { toolLabel, _toolCombo, detectBtn, tipLabel });
 
@@ -125,12 +126,19 @@ public class DetectionPage : UserControl
         _toolOptions = new Panel
         {
             Dock = DockStyle.Bottom,
-            Height = 150,
+            Height = 180,
             BorderStyle = BorderStyle.FixedSingle,
             AutoScroll = true,
-            Padding = new Padding(5)
+            Padding = new Padding(8)
         };
-        var toolOptionsLabel = new Label { Text = "工具參數", Dock = DockStyle.Top, Height = 20, Font = new Font("Microsoft JhengHei", 9, FontStyle.Bold) };
+        var toolOptionsLabel = new Label
+        {
+            Text = "工具參數",
+            Dock = DockStyle.Top,
+            Height = 22,
+            Font = new Font("Microsoft JhengHei", 9, FontStyle.Bold),
+            BackColor = Color.FromArgb(240, 240, 240)
+        };
         _toolOptions.Controls.Add(toolOptionsLabel);
 
         // 屬性 (填滿)
@@ -192,6 +200,11 @@ public class DetectionPage : UserControl
             _toolOptions.Controls.RemoveAt(1);
         }
 
+        // 重置模式
+        _currentDetector = null;
+        _currentMeasureMode = null;
+        _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
+
         int y = 25;
 
         switch (_toolCombo.SelectedIndex)
@@ -240,50 +253,59 @@ public class DetectionPage : UserControl
                 _toolCombo.SelectedIndex = 0;
                 return;
             case 8: // 量測距離
-                _currentDetector = null;
-                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
-                AddMeasurementUI(y, "距離");
+                _currentMeasureMode = "距離";
+                AddMeasurementUI(y);
                 break;
             case 9: // 量測角度
-                _currentDetector = null;
-                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
-                AddMeasurementUI(y, "角度");
-                break;
-            default:
-                _currentDetector = null;
-                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
+                _currentMeasureMode = "角度";
+                AddMeasurementUI(y);
                 break;
         }
     }
 
-    private void AddMeasurementUI(int y, string measureType)
+    private void ExecuteCurrentTool()
+    {
+        if (_currentMeasureMode == "距離")
+        {
+            ExecuteDistanceMeasurement();
+        }
+        else if (_currentMeasureMode == "角度")
+        {
+            ExecuteAngleMeasurement();
+        }
+        else if (_currentDetector != null)
+        {
+            ExecuteDetection();
+        }
+        else
+        {
+            MessageBox.Show("請先選擇工具", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void AddMeasurementUI(int y)
     {
         var infoLabel = new Label
         {
-            Text = measureType == "距離"
-                ? "在物件列表中選取兩個物件\n(點、線、圓)，然後點擊量測"
-                : "在物件列表中選取兩條線，\n然後點擊量測計算夾角",
+            Text = _currentMeasureMode == "距離"
+                ? "1. Ctrl+點擊選取兩個物件\n2. 點擊上方「執行」按鈕"
+                : "1. Ctrl+點擊選取兩條線\n2. 點擊上方「執行」按鈕",
             Location = new System.Drawing.Point(5, y),
-            Size = new System.Drawing.Size(170, 40),
-            ForeColor = Color.Gray
+            Size = new System.Drawing.Size(170, 50),
+            ForeColor = Color.DarkBlue
         };
         _toolOptions.Controls.Add(infoLabel);
 
-        var measureBtn = new Button
+        var supportLabel = new Label
         {
-            Text = $"執行{measureType}量測",
-            Location = new System.Drawing.Point(5, y + 45),
-            Width = 120,
-            Height = 28
+            Text = _currentMeasureMode == "距離"
+                ? "支援組合:\n• 點+點  • 圓+圓\n• 線+線  • 點+線\n• 點+圓"
+                : "支援:\n• 線+線 夾角",
+            Location = new System.Drawing.Point(5, y + 55),
+            Size = new System.Drawing.Size(170, 70),
+            ForeColor = Color.Gray
         };
-        measureBtn.Click += (s, e) =>
-        {
-            if (measureType == "距離")
-                ExecuteDistanceMeasurement();
-            else
-                ExecuteAngleMeasurement();
-        };
-        _toolOptions.Controls.Add(measureBtn);
+        _toolOptions.Controls.Add(supportLabel);
     }
 
     private void ExecuteDistanceMeasurement()
@@ -431,20 +453,28 @@ public class DetectionPage : UserControl
 
     private int AddToolOption(int y, string label, double defaultValue, double min, double max, Action<double> onValueChanged)
     {
-        var lbl = new Label { Text = $"{label}:", Location = new System.Drawing.Point(5, y + 3), AutoSize = true };
+        var lbl = new Label
+        {
+            Text = $"{label}:",
+            Location = new System.Drawing.Point(8, y + 4),
+            AutoSize = true,
+            Font = new Font("Microsoft JhengHei", 9)
+        };
         var num = new NumericUpDown
         {
-            Location = new System.Drawing.Point(90, y),
-            Width = 80,
+            Location = new System.Drawing.Point(85, y),
+            Width = 75,
+            Height = 24,
             Minimum = (decimal)min,
             Maximum = (decimal)max,
             Value = (decimal)defaultValue,
-            DecimalPlaces = defaultValue % 1 == 0 ? 0 : 1
+            DecimalPlaces = defaultValue % 1 == 0 ? 0 : 1,
+            Font = new Font("Microsoft JhengHei", 9)
         };
         num.ValueChanged += (s, e) => onValueChanged((double)num.Value);
         _toolOptions.Controls.Add(lbl);
         _toolOptions.Controls.Add(num);
-        return y + 28;
+        return y + 30;
     }
 
     private void Canvas_RoiSelected(object? sender, DrawingRectangleF roi)
