@@ -39,6 +39,8 @@ public class ParameterSearchPage : UserControl
     private int _searchTargetIndex;
     private int _searchEvalTypeIndex;
     private int _searchExpectedCount;
+    private double _searchEarlyStopThreshold;
+    private bool _searchEnableEarlyStop;
 
     public ParameterSearchPage(ImageManager imageManager, PipelineManager pipelineManager)
     {
@@ -271,6 +273,8 @@ public class ParameterSearchPage : UserControl
         _searchTargetIndex = _targetCombo.SelectedIndex;
         _searchEvalTypeIndex = _evalTypeCombo.SelectedIndex;
         _searchExpectedCount = (int)_expectedCountNum.Value;
+        _searchEarlyStopThreshold = (double)_earlyStopThresholdNum.Value;
+        _searchEnableEarlyStop = _earlyStopCheck.Checked;
 
         _cts = new CancellationTokenSource();
         _startButton.Enabled = false;
@@ -311,8 +315,6 @@ public class ParameterSearchPage : UserControl
 
         int total = combinations.Count;
         int current = 0;
-        double earlyStopThreshold = (double)_earlyStopThresholdNum.Value;
-        bool enableEarlyStop = _earlyStopCheck.Checked;
         double bestScore = 0;
 
         UpdateProgress(0, total, "網格搜尋中...");
@@ -322,7 +324,7 @@ public class ParameterSearchPage : UserControl
 
         foreach (var combo in combinations)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested) break;
 
             var result = EvaluateCombination(mat, combo);
             _searchResults.Add(result);
@@ -333,10 +335,10 @@ public class ParameterSearchPage : UserControl
             current++;
             UpdateProgress(current, total, $"網格搜尋中... {current}/{total} (最佳:{bestScore:F3})");
 
-            // 早停檢查
-            if (enableEarlyStop && bestScore >= earlyStopThreshold)
+            // 早停檢查 - 使用已捕獲的設定值
+            if (_searchEnableEarlyStop && bestScore >= _searchEarlyStopThreshold)
             {
-                UpdateProgress(current, total, $"早停 - 達到閾值 {bestScore:F3} >= {earlyStopThreshold:F2}");
+                UpdateProgress(current, total, $"早停 - 達到閾值 {bestScore:F3} >= {_searchEarlyStopThreshold:F2}");
                 break;
             }
         }
@@ -348,8 +350,6 @@ public class ParameterSearchPage : UserControl
     private void ExecuteRandomSearch(CancellationToken ct, List<SearchParameter> parameters, int iterations)
     {
         int current = 0;
-        double earlyStopThreshold = (double)_earlyStopThresholdNum.Value;
-        bool enableEarlyStop = _earlyStopCheck.Checked;
         double bestScore = 0;
         int noImprovementCount = 0;
         const int maxNoImprovement = 50; // 連續50次無改進也停止
@@ -361,7 +361,7 @@ public class ParameterSearchPage : UserControl
 
         for (int i = 0; i < iterations; i++)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested) break;
 
             // 生成隨機參數組合
             var combo = GenerateRandomCombination(parameters);
@@ -381,12 +381,12 @@ public class ParameterSearchPage : UserControl
             current++;
             UpdateProgress(current, iterations, $"隨機搜尋中... {current}/{iterations} (最佳:{bestScore:F3})");
 
-            // 早停檢查
-            if (enableEarlyStop)
+            // 早停檢查 - 使用已捕獲的設定值
+            if (_searchEnableEarlyStop)
             {
-                if (bestScore >= earlyStopThreshold)
+                if (bestScore >= _searchEarlyStopThreshold)
                 {
-                    UpdateProgress(current, iterations, $"早停 - 達到閾值 {bestScore:F3} >= {earlyStopThreshold:F2}");
+                    UpdateProgress(current, iterations, $"早停 - 達到閾值 {bestScore:F3} >= {_searchEarlyStopThreshold:F2}");
                     break;
                 }
                 if (noImprovementCount >= maxNoImprovement)
