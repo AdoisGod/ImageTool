@@ -34,6 +34,9 @@ public class ParameterSearchPage : UserControl
     private CancellationTokenSource? _cts;
     private List<SearchResult> _searchResults = new();
     private readonly Random _random = new();
+    private readonly GroundTruthManager _groundTruth = new();
+    private ListBox _groundTruthList = null!;
+    private NumericUpDown _toleranceNum = null!;
 
     // 搜尋設定 (在UI執行緒捕獲，避免跨執行緒存取)
     private int _searchTargetIndex;
@@ -41,6 +44,7 @@ public class ParameterSearchPage : UserControl
     private int _searchExpectedCount;
     private double _searchEarlyStopThreshold;
     private bool _searchEnableEarlyStop;
+    private double _searchTolerance;
 
     public ParameterSearchPage(ImageManager imageManager, PipelineManager pipelineManager)
     {
@@ -98,13 +102,14 @@ public class ParameterSearchPage : UserControl
 
         // 評估設定
         var evalGroup = new GroupBox { Text = "評估方式", Dock = DockStyle.Fill };
-        var evalPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown };
+        var evalPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, AutoScroll = true };
 
         var evalTypePanel = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, Height = 30 };
         evalTypePanel.Controls.Add(new Label { Text = "評估類型:", AutoSize = true });
         _evalTypeCombo = new ComboBox { Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
         _evalTypeCombo.Items.AddRange(new[] { "數量符合", "品質最佳", "位置符合" });
         _evalTypeCombo.SelectedIndex = 0;
+        _evalTypeCombo.SelectedIndexChanged += EvalTypeCombo_SelectedIndexChanged;
         evalTypePanel.Controls.Add(_evalTypeCombo);
         evalPanel.Controls.Add(evalTypePanel);
 
@@ -113,6 +118,28 @@ public class ParameterSearchPage : UserControl
         _expectedCountNum = new NumericUpDown { Width = 60, Minimum = 1, Maximum = 100, Value = 1 };
         countPanel.Controls.Add(_expectedCountNum);
         evalPanel.Controls.Add(countPanel);
+
+        // Ground Truth 設定 (位置符合時使用)
+        var gtPanel = new Panel { Width = 300, Height = 120, Visible = false };
+        gtPanel.Tag = "gtPanel"; // 用於後續顯示/隱藏控制
+
+        var gtLabel = new Label { Text = "Ground Truth 標記:", Location = new System.Drawing.Point(0, 5), AutoSize = true };
+        _groundTruthList = new ListBox { Location = new System.Drawing.Point(0, 25), Size = new System.Drawing.Size(200, 60) };
+
+        var gtAddCircleBtn = new Button { Text = "加圓", Location = new System.Drawing.Point(205, 25), Width = 50, Height = 24 };
+        gtAddCircleBtn.Click += (s, e) => AddGroundTruthCircle();
+        var gtAddPointBtn = new Button { Text = "加點", Location = new System.Drawing.Point(260, 25), Width = 40, Height = 24 };
+        gtAddPointBtn.Click += (s, e) => AddGroundTruthPoint();
+        var gtClearBtn = new Button { Text = "清除", Location = new System.Drawing.Point(205, 55), Width = 50, Height = 24 };
+        gtClearBtn.Click += (s, e) => { _groundTruth.Clear(); RefreshGroundTruthList(); };
+
+        var tolerancePanel = new FlowLayoutPanel { Location = new System.Drawing.Point(0, 90), Width = 200, Height = 25, FlowDirection = FlowDirection.LeftToRight };
+        tolerancePanel.Controls.Add(new Label { Text = "容許誤差 (px):", AutoSize = true });
+        _toleranceNum = new NumericUpDown { Width = 55, Minimum = 1, Maximum = 100, Value = 10 };
+        tolerancePanel.Controls.Add(_toleranceNum);
+
+        gtPanel.Controls.AddRange(new Control[] { gtLabel, _groundTruthList, gtAddCircleBtn, gtAddPointBtn, gtClearBtn, tolerancePanel });
+        evalPanel.Controls.Add(gtPanel);
 
         evalGroup.Controls.Add(evalPanel);
         mainLayout.Controls.Add(evalGroup, 0, 1);
@@ -275,6 +302,7 @@ public class ParameterSearchPage : UserControl
         _searchExpectedCount = (int)_expectedCountNum.Value;
         _searchEarlyStopThreshold = (double)_earlyStopThresholdNum.Value;
         _searchEnableEarlyStop = _earlyStopCheck.Checked;
+        _searchTolerance = (double)_toleranceNum.Value;
 
         _cts = new CancellationTokenSource();
         _startButton.Enabled = false;
@@ -475,6 +503,7 @@ public class ParameterSearchPage : UserControl
     {
         int detectedCount = 0;
         double quality = 0;
+        var detectedObjects = new List<Objects.IGeometryObject>();
 
         try
         {
@@ -496,6 +525,7 @@ public class ParameterSearchPage : UserControl
                         CannyThreshold2 = parameters.GetValueOrDefault("Canny 高", 150)
                     };
                     var circles = circleDetector.Detect(processed);
+                    detectedObjects.AddRange(circles);
                     detectedCount = circles.Count;
                     quality = circles.Count > 0 ? circles.Average(c => ((Objects.CircleObject)c).RSquared ?? 0.5) : 0;
                     break;
@@ -507,6 +537,7 @@ public class ParameterSearchPage : UserControl
                         HoughThreshold = parameters.GetValueOrDefault("閾值", 50)
                     };
                     var lines = lineDetector.Detect(processed);
+                    detectedObjects.AddRange(lines);
                     detectedCount = lines.Count;
                     quality = lines.Count > 0 ? lines.Average(l => ((Objects.LineObject)l).RSquared ?? 0.5) : 0;
                     break;
@@ -524,12 +555,30 @@ public class ParameterSearchPage : UserControl
         catch { }
 
         // 計算評分 - 使用已捕獲的設定值
-        double score = _searchEvalTypeIndex switch
+        double score;
+        switch (_searchEvalTypeIndex)
         {
-            0 => 1.0 - Math.Abs(detectedCount - _searchExpectedCount) / (double)Math.Max(1, _searchExpectedCount),
-            1 => quality,
-            _ => detectedCount == _searchExpectedCount ? 1.0 : 0
-        };
+            case 0: // 數量符合
+                score = 1.0 - Math.Abs(detectedCount - _searchExpectedCount) / (double)Math.Max(1, _searchExpectedCount);
+                break;
+            case 1: // 品質最佳
+                score = quality;
+                break;
+            case 2: // 位置符合 - 使用 Ground Truth
+                if (_groundTruth.HasGroundTruth)
+                {
+                    score = _groundTruth.EvaluatePositionMatch(detectedObjects, _searchTolerance);
+                }
+                else
+                {
+                    // 無 Ground Truth 時，退回到數量符合
+                    score = detectedCount == _searchExpectedCount ? 1.0 : 0;
+                }
+                break;
+            default:
+                score = 0;
+                break;
+        }
 
         return new SearchResult
         {
@@ -662,5 +711,90 @@ public class ParameterSearchPage : UserControl
         public int DetectedCount { get; set; }
         public double Quality { get; set; }
         public double Score { get; set; }
+    }
+
+    private void EvalTypeCombo_SelectedIndexChanged(object? sender, EventArgs e)
+    {
+        // 顯示/隱藏 Ground Truth 面板
+        foreach (Control ctrl in ((Control)sender!).Parent!.Parent!.Controls)
+        {
+            if (ctrl is Panel panel && panel.Tag?.ToString() == "gtPanel")
+            {
+                panel.Visible = _evalTypeCombo.SelectedIndex == 2; // 位置符合
+            }
+        }
+    }
+
+    private void AddGroundTruthPoint()
+    {
+        using var dialog = new Form
+        {
+            Text = "新增 Ground Truth 點",
+            Size = new System.Drawing.Size(250, 150),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false,
+            MinimizeBox = false
+        };
+
+        var xLabel = new Label { Text = "X:", Location = new System.Drawing.Point(20, 20), AutoSize = true };
+        var xNum = new NumericUpDown { Location = new System.Drawing.Point(50, 18), Width = 80, Maximum = 10000, DecimalPlaces = 1 };
+        var yLabel = new Label { Text = "Y:", Location = new System.Drawing.Point(140, 20), AutoSize = true };
+        var yNum = new NumericUpDown { Location = new System.Drawing.Point(160, 18), Width = 80, Maximum = 10000, DecimalPlaces = 1 };
+
+        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(50, 70), Width = 70 };
+        var cancelBtn = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new System.Drawing.Point(130, 70), Width = 70 };
+
+        dialog.Controls.AddRange(new Control[] { xLabel, xNum, yLabel, yNum, okBtn, cancelBtn });
+        dialog.AcceptButton = okBtn;
+        dialog.CancelButton = cancelBtn;
+
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            _groundTruth.AddPoint(new System.Drawing.PointF((float)xNum.Value, (float)yNum.Value));
+            RefreshGroundTruthList();
+        }
+    }
+
+    private void AddGroundTruthCircle()
+    {
+        using var dialog = new Form
+        {
+            Text = "新增 Ground Truth 圓",
+            Size = new System.Drawing.Size(280, 180),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false,
+            MinimizeBox = false
+        };
+
+        var xLabel = new Label { Text = "圓心 X:", Location = new System.Drawing.Point(20, 20), AutoSize = true };
+        var xNum = new NumericUpDown { Location = new System.Drawing.Point(80, 18), Width = 80, Maximum = 10000, DecimalPlaces = 1 };
+        var yLabel = new Label { Text = "圓心 Y:", Location = new System.Drawing.Point(20, 50), AutoSize = true };
+        var yNum = new NumericUpDown { Location = new System.Drawing.Point(80, 48), Width = 80, Maximum = 10000, DecimalPlaces = 1 };
+        var rLabel = new Label { Text = "半徑:", Location = new System.Drawing.Point(20, 80), AutoSize = true };
+        var rNum = new NumericUpDown { Location = new System.Drawing.Point(80, 78), Width = 80, Minimum = 1, Maximum = 5000, Value = 50, DecimalPlaces = 1 };
+
+        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(60, 110), Width = 70 };
+        var cancelBtn = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new System.Drawing.Point(140, 110), Width = 70 };
+
+        dialog.Controls.AddRange(new Control[] { xLabel, xNum, yLabel, yNum, rLabel, rNum, okBtn, cancelBtn });
+        dialog.AcceptButton = okBtn;
+        dialog.CancelButton = cancelBtn;
+
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            _groundTruth.AddCircle(new System.Drawing.PointF((float)xNum.Value, (float)yNum.Value), (double)rNum.Value);
+            RefreshGroundTruthList();
+        }
+    }
+
+    private void RefreshGroundTruthList()
+    {
+        _groundTruthList.Items.Clear();
+        foreach (var item in _groundTruth.Items)
+        {
+            _groundTruthList.Items.Add(item.ToString());
+        }
     }
 }

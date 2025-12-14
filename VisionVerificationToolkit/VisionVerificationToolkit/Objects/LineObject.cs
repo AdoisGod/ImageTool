@@ -22,6 +22,7 @@ public class LineObject : GeometryObjectBase
     public double Length => Math.Sqrt(Math.Pow(EndX - StartX, 2) + Math.Pow(EndY - StartY, 2));
     public double AngleDegrees => Math.Atan2(EndY - StartY, EndX - StartX) * 180.0 / Math.PI;
     public double AngleRadians => Math.Atan2(EndY - StartY, EndX - StartX);
+    public double Angle => AngleDegrees; // 別名
 
     // 直線方程式 ax + by + c = 0
     public double A => EndY - StartY;
@@ -139,5 +140,13 @@ public class LineObject : GeometryObjectBase
         {
             return new LineObject(point.X, point.Y - 50, point.X, point.Y + 50);
         }
+    }
+
+    /// <summary>
+    /// 計算點到直線的距離 (靜態方法)
+    /// </summary>
+    public static double PointToLineDistance(PointF point, LineObject line)
+    {
+        return line.DistanceToPoint(point);
     }
 }

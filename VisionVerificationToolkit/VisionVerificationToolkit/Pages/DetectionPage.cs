@@ -83,12 +83,14 @@ public class DetectionPage : UserControl
             "選擇工具...",
             "找圓 (霍夫)", "找圓 (邊緣擬合)",
             "找線 (卡尺)", "找線 (霍夫)",
-            "找點 (角點)", "找輪廓",
+            "找點 (角點)", "找輪廓", "能量輪廓",
             "───建構───",
             "兩線交點", "平行線", "垂直線",
             "圓心連線", "圓心提取", "兩點中點",
             "───量測───",
-            "量測距離", "量測角度"
+            "量測距離", "量測角度",
+            "量測同心度", "量測平行度", "量測垂直度",
+            "量測圓度", "量測直線度"
         });
         _toolCombo.SelectedIndex = 0;
         _toolCombo.SelectedIndexChanged += ToolCombo_SelectedIndexChanged;
@@ -260,43 +262,71 @@ public class DetectionPage : UserControl
                 y = AddToolOption(y, "最小面積", 100, 10, 50000, v => ((ContourDetector)_currentDetector!).MinArea = v);
                 y = AddToolOption(y, "最大面積", 100000, 100, 1000000, v => ((ContourDetector)_currentDetector!).MaxArea = v);
                 break;
-            case 7: // ───建構─── 分隔線
+            case 7: // 能量輪廓
+                _currentDetector = new EnergyContourDetector();
+                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
+                y = AddToolOption(y, "數據權重", 1.0, 0.1, 10.0, v => ((EnergyContourDetector)_currentDetector!).DataWeight = v);
+                y = AddToolOption(y, "平滑權重", 0.5, 0.0, 5.0, v => ((EnergyContourDetector)_currentDetector!).SmoothWeight = v);
+                y = AddToolOption(y, "角度懲罰", 2.0, 0.1, 10.0, v => ((EnergyContourDetector)_currentDetector!).AnglePenalty = v);
+                y = AddToolOption(y, "搜尋範圍", 10, 1, 20, v => ((EnergyContourDetector)_currentDetector!).SearchRange = (int)v);
+                break;
+            case 8: // ───建構─── 分隔線
                 _toolCombo.SelectedIndex = 0;
                 return;
-            case 8: // 兩線交點
+            case 9: // 兩線交點
                 _currentConstructMode = "兩線交點";
                 AddConstructionUI(y, "選取兩條線", "線+線 → 交點");
                 break;
-            case 9: // 平行線
+            case 10: // 平行線
                 _currentConstructMode = "平行線";
                 AddConstructionUI(y, "選取一條線和一個點", "線+點 → 平行線");
                 break;
-            case 10: // 垂直線
+            case 11: // 垂直線
                 _currentConstructMode = "垂直線";
                 AddConstructionUI(y, "選取一條線和一個點", "線+點 → 垂直線");
                 break;
-            case 11: // 圓心連線
+            case 12: // 圓心連線
                 _currentConstructMode = "圓心連線";
                 AddConstructionUI(y, "選取兩個圓", "圓+圓 → 連線");
                 break;
-            case 12: // 圓心提取
+            case 13: // 圓心提取
                 _currentConstructMode = "圓心提取";
                 AddConstructionUI(y, "選取一個圓", "圓 → 圓心點");
                 break;
-            case 13: // 兩點中點
+            case 14: // 兩點中點
                 _currentConstructMode = "兩點中點";
                 AddConstructionUI(y, "選取兩個點", "點+點 → 中點");
                 break;
-            case 14: // ───量測─── 分隔線
+            case 15: // ───量測─── 分隔線
                 _toolCombo.SelectedIndex = 0;
                 return;
-            case 15: // 量測距離
+            case 16: // 量測距離
                 _currentMeasureMode = "距離";
                 AddMeasurementUI(y);
                 break;
-            case 16: // 量測角度
+            case 17: // 量測角度
                 _currentMeasureMode = "角度";
                 AddMeasurementUI(y);
+                break;
+            case 18: // 量測同心度
+                _currentMeasureMode = "同心度";
+                AddGeometryMeasurementUI(y, "選取兩個圓", "圓+圓 → 圓心偏移量");
+                break;
+            case 19: // 量測平行度
+                _currentMeasureMode = "平行度";
+                AddGeometryMeasurementUI(y, "選取兩條線", "線+線 → 角度偏差");
+                break;
+            case 20: // 量測垂直度
+                _currentMeasureMode = "垂直度";
+                AddGeometryMeasurementUI(y, "選取兩條線", "線+線 → 與90°的偏差");
+                break;
+            case 21: // 量測圓度
+                _currentMeasureMode = "圓度";
+                AddGeometryMeasurementUI(y, "選取一個圓", "圓 → 擬合R²");
+                break;
+            case 22: // 量測直線度
+                _currentMeasureMode = "直線度";
+                AddGeometryMeasurementUI(y, "選取一條線", "線 → 擬合R²");
                 break;
         }
     }
@@ -310,6 +340,26 @@ public class DetectionPage : UserControl
         else if (_currentMeasureMode == "角度")
         {
             ExecuteAngleMeasurement();
+        }
+        else if (_currentMeasureMode == "同心度")
+        {
+            ExecuteConcentricityMeasurement();
+        }
+        else if (_currentMeasureMode == "平行度")
+        {
+            ExecuteParallelismMeasurement();
+        }
+        else if (_currentMeasureMode == "垂直度")
+        {
+            ExecutePerpendicularityMeasurement();
+        }
+        else if (_currentMeasureMode == "圓度")
+        {
+            ExecuteCircularityMeasurement();
+        }
+        else if (_currentMeasureMode == "直線度")
+        {
+            ExecuteLinearityMeasurement();
         }
         else if (_currentConstructMode != null)
         {
@@ -1197,6 +1247,122 @@ public class DetectionPage : UserControl
                 MessageBox.Show($"匯出失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+    }
+
+    private void AddGeometryMeasurementUI(int y, string instruction, string formula)
+    {
+        var infoLabel = new Label
+        {
+            Text = $"1. Ctrl+點擊{instruction}\n2. 點擊上方「執行」按鈕",
+            Location = new System.Drawing.Point(5, y),
+            Size = new System.Drawing.Size(170, 50),
+            ForeColor = Color.DarkBlue
+        };
+        _toolOptions.Controls.Add(infoLabel);
+
+        var formulaLabel = new Label
+        {
+            Text = $"計算: {formula}",
+            Location = new System.Drawing.Point(5, y + 55),
+            Size = new System.Drawing.Size(170, 25),
+            ForeColor = Color.Gray
+        };
+        _toolOptions.Controls.Add(formulaLabel);
+    }
+
+    private void ExecuteConcentricityMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var circles = selected.OfType<CircleObject>().ToList();
+
+        if (circles.Count != 2)
+        {
+            MessageBox.Show("請在物件列表中選取兩個圓 (使用 Ctrl+點擊多選)", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = new ConcentricityMeasurementResult(circles[0], circles[1], "同心度");
+
+        // 套用校正
+        result.ValueMm = _calibration.PixelsToMm(result.Value);
+        if (_calibration.IsCalibrated)
+            result.Unit = "mm";
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {result.GetSummary()}";
+    }
+
+    private void ExecuteParallelismMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var lines = selected.OfType<LineObject>().ToList();
+
+        if (lines.Count != 2)
+        {
+            MessageBox.Show("請在物件列表中選取兩條線 (使用 Ctrl+點擊多選)", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = new ParallelismMeasurementResult(lines[0], lines[1], "平行度");
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {result.GetSummary()}";
+    }
+
+    private void ExecutePerpendicularityMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var lines = selected.OfType<LineObject>().ToList();
+
+        if (lines.Count != 2)
+        {
+            MessageBox.Show("請在物件列表中選取兩條線 (使用 Ctrl+點擊多選)", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = new PerpendicularityMeasurementResult(lines[0], lines[1], "垂直度");
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {result.GetSummary()}";
+    }
+
+    private void ExecuteCircularityMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var circle = selected.OfType<CircleObject>().FirstOrDefault();
+
+        if (circle == null)
+        {
+            MessageBox.Show("請在物件列表中選取一個圓", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = new CircularityMeasurementResult(circle, "圓度");
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {result.GetSummary()}";
+    }
+
+    private void ExecuteLinearityMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var line = selected.OfType<LineObject>().FirstOrDefault();
+
+        if (line == null)
+        {
+            MessageBox.Show("請在物件列表中選取一條線", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var result = new LinearityMeasurementResult(line, "直線度");
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {result.GetSummary()}";
     }
 
     private void Canvas_DragDrop(object? sender, DragEventArgs e)
