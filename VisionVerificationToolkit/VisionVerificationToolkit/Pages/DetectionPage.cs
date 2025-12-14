@@ -27,6 +27,7 @@ public class DetectionPage : UserControl
     private IDetector? _currentDetector;
     private bool _useOriginalImage = false;
     private bool _isSelectingObject = false; // 防止選取事件無限遞迴
+    private readonly List<IGeometryObject> _multiSelectedObjects = new(); // 多選物件
 
     public DetectionPage(ImageManager imageManager, CalibrationManager calibration)
     {
@@ -70,7 +71,14 @@ public class DetectionPage : UserControl
             Width = 140,
             DropDownStyle = ComboBoxStyle.DropDownList
         };
-        _toolCombo.Items.AddRange(new[] { "選擇工具...", "找圓 (霍夫)", "找圓 (邊緣擬合)", "找線 (卡尺)", "找線 (霍夫)", "找點 (角點)", "找輪廓" });
+        _toolCombo.Items.AddRange(new[] {
+            "選擇工具...",
+            "找圓 (霍夫)", "找圓 (邊緣擬合)",
+            "找線 (卡尺)", "找線 (霍夫)",
+            "找點 (角點)", "找輪廓",
+            "───量測───",
+            "量測距離", "量測角度"
+        });
         _toolCombo.SelectedIndex = 0;
         _toolCombo.SelectedIndexChanged += ToolCombo_SelectedIndexChanged;
 
@@ -131,9 +139,10 @@ public class DetectionPage : UserControl
         propGroup.Controls.Add(_propertyGrid);
 
         // 物件樹 (上方)
-        var treeGroup = new GroupBox { Text = "檢測物件", Dock = DockStyle.Top, Height = 280 };
+        var treeGroup = new GroupBox { Text = "檢測物件 (Ctrl+點擊多選)", Dock = DockStyle.Top, Height = 280 };
         _objectTree = new TreeView { Dock = DockStyle.Fill, ShowRootLines = true };
         _objectTree.AfterSelect += ObjectTree_AfterSelect;
+        _objectTree.NodeMouseClick += ObjectTree_NodeMouseClick;
         _objectTree.KeyDown += (s, e) => { if (e.KeyCode == Keys.Delete) DeleteSelected(); };
 
         var treeButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 30, FlowDirection = FlowDirection.LeftToRight };
@@ -227,10 +236,196 @@ public class DetectionPage : UserControl
                 y = AddToolOption(y, "最小面積", 100, 10, 50000, v => ((ContourDetector)_currentDetector!).MinArea = v);
                 y = AddToolOption(y, "最大面積", 100000, 100, 1000000, v => ((ContourDetector)_currentDetector!).MaxArea = v);
                 break;
+            case 7: // 分隔線
+                _toolCombo.SelectedIndex = 0;
+                return;
+            case 8: // 量測距離
+                _currentDetector = null;
+                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
+                AddMeasurementUI(y, "距離");
+                break;
+            case 9: // 量測角度
+                _currentDetector = null;
+                _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
+                AddMeasurementUI(y, "角度");
+                break;
             default:
                 _currentDetector = null;
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
                 break;
+        }
+    }
+
+    private void AddMeasurementUI(int y, string measureType)
+    {
+        var infoLabel = new Label
+        {
+            Text = measureType == "距離"
+                ? "在物件列表中選取兩個物件\n(點、線、圓)，然後點擊量測"
+                : "在物件列表中選取兩條線，\n然後點擊量測計算夾角",
+            Location = new System.Drawing.Point(5, y),
+            Size = new System.Drawing.Size(170, 40),
+            ForeColor = Color.Gray
+        };
+        _toolOptions.Controls.Add(infoLabel);
+
+        var measureBtn = new Button
+        {
+            Text = $"執行{measureType}量測",
+            Location = new System.Drawing.Point(5, y + 45),
+            Width = 120,
+            Height = 28
+        };
+        measureBtn.Click += (s, e) =>
+        {
+            if (measureType == "距離")
+                ExecuteDistanceMeasurement();
+            else
+                ExecuteAngleMeasurement();
+        };
+        _toolOptions.Controls.Add(measureBtn);
+    }
+
+    private void ExecuteDistanceMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        if (selected.Count != 2)
+        {
+            MessageBox.Show("請在物件列表中選取兩個物件 (使用 Ctrl+點擊多選)", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var obj1 = selected[0];
+        var obj2 = selected[1];
+        MeasurementResult? result = null;
+
+        // 根據物件類型計算距離
+        if (obj1 is PointObject p1 && obj2 is PointObject p2)
+        {
+            result = new DistanceMeasurementResult(p1.Position, p2.Position, "點對點距離");
+        }
+        else if (obj1 is CircleObject c1 && obj2 is CircleObject c2)
+        {
+            // 圓心距離
+            double dist = CircleObject.CenterDistance(c1, c2);
+            result = new MeasurementResult(MeasurementType.Distance, dist, "圓心距離")
+            {
+                AnnotationPoints = { c1.Center, c2.Center },
+                SourceObjects = { c1, c2 }
+            };
+        }
+        else if (obj1 is LineObject l1 && obj2 is LineObject l2)
+        {
+            // 線對線：計算平行線距離 (取中點)
+            var mid1 = new DrawingPointF((l1.StartPoint.X + l1.EndPoint.X) / 2, (l1.StartPoint.Y + l1.EndPoint.Y) / 2);
+            double dist = l2.DistanceToPoint(mid1);
+            result = new MeasurementResult(MeasurementType.Distance, dist, "線對線距離")
+            {
+                AnnotationPoints = { mid1, l2.ProjectPoint(mid1) },
+                SourceObjects = { l1, l2 }
+            };
+        }
+        else if ((obj1 is PointObject pt1 && obj2 is LineObject ln1) || (obj1 is LineObject ln2 && obj2 is PointObject pt2))
+        {
+            var point = obj1 is PointObject ? ((PointObject)obj1).Position : ((PointObject)obj2).Position;
+            var line = obj1 is LineObject ? (LineObject)obj1 : (LineObject)obj2;
+            double dist = line.DistanceToPoint(point);
+            result = new MeasurementResult(MeasurementType.Distance, dist, "點到線距離")
+            {
+                AnnotationPoints = { point, line.ProjectPoint(point) },
+                SourceObjects = { obj1, obj2 }
+            };
+        }
+        else if ((obj1 is PointObject ptc1 && obj2 is CircleObject cir1) || (obj1 is CircleObject cir2 && obj2 is PointObject ptc2))
+        {
+            var point = obj1 is PointObject ? ((PointObject)obj1).Position : ((PointObject)obj2).Position;
+            var circle = obj1 is CircleObject ? (CircleObject)obj1 : (CircleObject)obj2;
+            double distToEdge = circle.DistanceToEdge(point);
+            result = new MeasurementResult(MeasurementType.Distance, distToEdge, "點到圓邊距離")
+            {
+                AnnotationPoints = { point, circle.Center },
+                SourceObjects = { obj1, obj2 }
+            };
+        }
+        else
+        {
+            MessageBox.Show("不支援的物件組合，請選取：\n• 點+點\n• 圓+圓\n• 線+線\n• 點+線\n• 點+圓", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (result != null)
+        {
+            // 套用校正
+            result.ValueMm = _calibration.PixelsToMm(result.Value);
+            if (_calibration.IsCalibrated)
+                result.Unit = "mm";
+
+            _resultManager.Add(result);
+            _canvas.AddObject(result);
+            _statusLabel.Text = $"量測結果: {result.GetSummary()}";
+        }
+    }
+
+    private void ExecuteAngleMeasurement()
+    {
+        var selected = GetSelectedObjectsFromTree();
+        var lines = selected.OfType<LineObject>().ToList();
+
+        if (lines.Count != 2)
+        {
+            MessageBox.Show("請在物件列表中選取兩條線 (使用 Ctrl+點擊多選)", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var l1 = lines[0];
+        var l2 = lines[1];
+
+        // 計算夾角
+        double angle = LineObject.AngleBetween(l1, l2);
+
+        // 找交點作為頂點
+        var intersection = LineObject.Intersection(l1, l2);
+        var vertex = intersection ?? new DrawingPointF(
+            (l1.StartPoint.X + l2.StartPoint.X) / 2,
+            (l1.StartPoint.Y + l2.StartPoint.Y) / 2);
+
+        var result = new AngleMeasurementResult(
+            l1.StartPoint,
+            vertex,
+            l2.StartPoint,
+            "線對線夾角")
+        {
+            SourceObjects = { l1, l2 }
+        };
+        result.Value = angle; // 覆寫計算值
+
+        _resultManager.Add(result);
+        _canvas.AddObject(result);
+        _statusLabel.Text = $"量測結果: {angle:F2}°";
+    }
+
+    private List<IGeometryObject> GetSelectedObjectsFromTree()
+    {
+        // 返回多選列表的複製
+        if (_multiSelectedObjects.Count > 0)
+        {
+            return new List<IGeometryObject>(_multiSelectedObjects);
+        }
+        // 如果沒有多選，返回當前選取的
+        if (_resultManager.SelectedObject != null)
+        {
+            return new List<IGeometryObject> { _resultManager.SelectedObject };
+        }
+        return new List<IGeometryObject>();
+    }
+
+    private IEnumerable<TreeNode> GetAllNodes(TreeNodeCollection nodes)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            yield return node;
+            foreach (var child in GetAllNodes(node.Nodes))
+                yield return child;
         }
     }
 
@@ -343,9 +538,43 @@ public class DetectionPage : UserControl
 
     private void ObjectTree_AfterSelect(object? sender, TreeViewEventArgs e)
     {
-        if (e.Node?.Tag is IGeometryObject obj)
+        // 只在非 Ctrl 點擊時處理（Ctrl 點擊由 NodeMouseClick 處理）
+        if (ModifierKeys != Keys.Control && e.Node?.Tag is IGeometryObject obj)
         {
+            _multiSelectedObjects.Clear();
+            _multiSelectedObjects.Add(obj);
             SelectObject(obj);
+            UpdateTreeNodeHighlight();
+        }
+    }
+
+    private void ObjectTree_NodeMouseClick(object? sender, TreeNodeMouseClickEventArgs e)
+    {
+        if (ModifierKeys == Keys.Control && e.Node?.Tag is IGeometryObject obj)
+        {
+            // Ctrl+點擊：切換多選
+            if (_multiSelectedObjects.Contains(obj))
+            {
+                _multiSelectedObjects.Remove(obj);
+            }
+            else
+            {
+                _multiSelectedObjects.Add(obj);
+            }
+            UpdateTreeNodeHighlight();
+            _statusLabel.Text = $"已選取 {_multiSelectedObjects.Count} 個物件";
+        }
+    }
+
+    private void UpdateTreeNodeHighlight()
+    {
+        // 更新樹節點的視覺狀態
+        foreach (TreeNode node in GetAllNodes(_objectTree.Nodes))
+        {
+            if (node.Tag is IGeometryObject obj)
+            {
+                node.BackColor = _multiSelectedObjects.Contains(obj) ? Color.LightBlue : Color.White;
+            }
         }
     }
 
