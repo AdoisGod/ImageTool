@@ -1,5 +1,6 @@
 using OpenCvSharp;
 using VisionVerificationToolkit.Controls;
+using VisionVerificationToolkit.Construction;
 using VisionVerificationToolkit.Core;
 using VisionVerificationToolkit.Detection;
 using VisionVerificationToolkit.Objects;
@@ -29,6 +30,7 @@ public class DetectionPage : UserControl
     private bool _isSelectingObject = false; // 防止選取事件無限遞迴
     private readonly List<IGeometryObject> _multiSelectedObjects = new(); // 多選物件
     private string? _currentMeasureMode = null; // 當前量測模式: "距離" 或 "角度"
+    private string? _currentConstructMode = null; // 當前建構模式
 
     public DetectionPage(ImageManager imageManager, CalibrationManager calibration)
     {
@@ -77,6 +79,9 @@ public class DetectionPage : UserControl
             "找圓 (霍夫)", "找圓 (邊緣擬合)",
             "找線 (卡尺)", "找線 (霍夫)",
             "找點 (角點)", "找輪廓",
+            "───建構───",
+            "兩線交點", "平行線", "垂直線",
+            "圓心連線", "圓心提取", "兩點中點",
             "───量測───",
             "量測距離", "量測角度"
         });
@@ -203,6 +208,7 @@ public class DetectionPage : UserControl
         // 重置模式
         _currentDetector = null;
         _currentMeasureMode = null;
+        _currentConstructMode = null;
         _canvas.CurrentDrawMode = ImageCanvas.DrawMode.None;
 
         int y = 25;
@@ -249,14 +255,41 @@ public class DetectionPage : UserControl
                 y = AddToolOption(y, "最小面積", 100, 10, 50000, v => ((ContourDetector)_currentDetector!).MinArea = v);
                 y = AddToolOption(y, "最大面積", 100000, 100, 1000000, v => ((ContourDetector)_currentDetector!).MaxArea = v);
                 break;
-            case 7: // 分隔線
+            case 7: // ───建構─── 分隔線
                 _toolCombo.SelectedIndex = 0;
                 return;
-            case 8: // 量測距離
+            case 8: // 兩線交點
+                _currentConstructMode = "兩線交點";
+                AddConstructionUI(y, "選取兩條線", "線+線 → 交點");
+                break;
+            case 9: // 平行線
+                _currentConstructMode = "平行線";
+                AddConstructionUI(y, "選取一條線和一個點", "線+點 → 平行線");
+                break;
+            case 10: // 垂直線
+                _currentConstructMode = "垂直線";
+                AddConstructionUI(y, "選取一條線和一個點", "線+點 → 垂直線");
+                break;
+            case 11: // 圓心連線
+                _currentConstructMode = "圓心連線";
+                AddConstructionUI(y, "選取兩個圓", "圓+圓 → 連線");
+                break;
+            case 12: // 圓心提取
+                _currentConstructMode = "圓心提取";
+                AddConstructionUI(y, "選取一個圓", "圓 → 圓心點");
+                break;
+            case 13: // 兩點中點
+                _currentConstructMode = "兩點中點";
+                AddConstructionUI(y, "選取兩個點", "點+點 → 中點");
+                break;
+            case 14: // ───量測─── 分隔線
+                _toolCombo.SelectedIndex = 0;
+                return;
+            case 15: // 量測距離
                 _currentMeasureMode = "距離";
                 AddMeasurementUI(y);
                 break;
-            case 9: // 量測角度
+            case 16: // 量測角度
                 _currentMeasureMode = "角度";
                 AddMeasurementUI(y);
                 break;
@@ -273,6 +306,10 @@ public class DetectionPage : UserControl
         {
             ExecuteAngleMeasurement();
         }
+        else if (_currentConstructMode != null)
+        {
+            ExecuteConstruction();
+        }
         else if (_currentDetector != null)
         {
             ExecuteDetection();
@@ -280,6 +317,127 @@ public class DetectionPage : UserControl
         else
         {
             MessageBox.Show("請先選擇工具", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void AddConstructionUI(int y, string instruction, string formula)
+    {
+        var infoLabel = new Label
+        {
+            Text = $"1. Ctrl+點擊{instruction}\n2. 點擊上方「執行」按鈕",
+            Location = new System.Drawing.Point(5, y),
+            Size = new System.Drawing.Size(170, 50),
+            ForeColor = Color.DarkBlue
+        };
+        _toolOptions.Controls.Add(infoLabel);
+
+        var formulaLabel = new Label
+        {
+            Text = $"建構: {formula}",
+            Location = new System.Drawing.Point(5, y + 55),
+            Size = new System.Drawing.Size(170, 25),
+            ForeColor = Color.Gray
+        };
+        _toolOptions.Controls.Add(formulaLabel);
+    }
+
+    private void ExecuteConstruction()
+    {
+        var selected = GetSelectedObjectsFromTree();
+
+        IGeometryObject? result = null;
+        List<IGeometryObject>? results = null;
+
+        switch (_currentConstructMode)
+        {
+            case "兩線交點":
+                var lines = selected.OfType<LineObject>().ToList();
+                if (lines.Count < 2)
+                {
+                    MessageBox.Show("請選取兩條線", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.LineIntersection(lines[0], lines[1]);
+                if (result == null)
+                {
+                    MessageBox.Show("兩線平行，無交點", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                break;
+
+            case "平行線":
+                var lineForParallel = selected.OfType<LineObject>().FirstOrDefault();
+                var pointForParallel = selected.OfType<PointObject>().FirstOrDefault();
+                if (lineForParallel == null || pointForParallel == null)
+                {
+                    MessageBox.Show("請選取一條線和一個點", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.ParallelLine(lineForParallel, pointForParallel);
+                break;
+
+            case "垂直線":
+                var lineForPerp = selected.OfType<LineObject>().FirstOrDefault();
+                var pointForPerp = selected.OfType<PointObject>().FirstOrDefault();
+                if (lineForPerp == null || pointForPerp == null)
+                {
+                    MessageBox.Show("請選取一條線和一個點", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.PerpendicularLine(lineForPerp, pointForPerp);
+                break;
+
+            case "圓心連線":
+                var circles = selected.OfType<CircleObject>().ToList();
+                if (circles.Count < 2)
+                {
+                    MessageBox.Show("請選取兩個圓", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.ConnectCircleCenters(circles[0], circles[1]);
+                break;
+
+            case "圓心提取":
+                var circle = selected.OfType<CircleObject>().FirstOrDefault();
+                if (circle == null)
+                {
+                    MessageBox.Show("請選取一個圓", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.ExtractCircleCenter(circle);
+                break;
+
+            case "兩點中點":
+                var points = selected.OfType<PointObject>().ToList();
+                if (points.Count < 2)
+                {
+                    MessageBox.Show("請選取兩個點", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                result = ObjectConstructor.Midpoint(points[0], points[1]);
+                break;
+
+            default:
+                MessageBox.Show("未知的建構類型", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+        }
+
+        // 添加結果
+        if (result != null)
+        {
+            _resultManager.Add(result);
+            _canvas.AddObject(result);
+            _statusLabel.Text = $"建構完成: {result.GetSummary()}";
+        }
+
+        if (results != null)
+        {
+            foreach (var obj in results)
+            {
+                _resultManager.Add(obj);
+                _canvas.AddObject(obj);
+            }
+            _statusLabel.Text = $"建構完成: {results.Count} 個物件";
         }
     }
 
