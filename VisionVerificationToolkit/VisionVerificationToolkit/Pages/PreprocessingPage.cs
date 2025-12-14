@@ -39,27 +39,27 @@ public class PreprocessingPage : UserControl
     {
         Dock = DockStyle.Fill;
 
-        // 主分割
+        // 主分割 - 左右分割
         var mainSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 300,
-            FixedPanel = FixedPanel.Panel2
+            SplitterDistance = 800,
+            FixedPanel = FixedPanel.None
         };
 
-        // 左側：影像顯示
+        // ===== 左側：影像顯示 =====
         var leftPanel = new Panel { Dock = DockStyle.Fill };
 
         // 工具列
-        var toolbar = new ToolStrip();
+        var toolbar = new ToolStrip { Dock = DockStyle.Top };
         toolbar.Items.Add(new ToolStripButton("載入影像", null, (s, e) => LoadImage()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripButton("儲存結果", null, (s, e) => SaveResult()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(new ToolStripButton("重置", null, (s, e) => ResetPipeline()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
 
-        var presetCombo = new ToolStripComboBox() { DropDownStyle = ComboBoxStyle.DropDownList };
+        var presetCombo = new ToolStripComboBox() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
         presetCombo.Items.AddRange(new[] { "選擇預設...", "標準邊緣檢測", "低對比度影像", "高雜訊環境", "模糊邊界" });
         presetCombo.SelectedIndex = 0;
         presetCombo.SelectedIndexChanged += PresetCombo_SelectedIndexChanged;
@@ -67,49 +67,57 @@ public class PreprocessingPage : UserControl
         toolbar.Items.Add(presetCombo);
 
         toolbar.Items.Add(new ToolStripSeparator());
-        toolbar.Items.Add(new ToolStripButton("傳送至檢測", null, (s, e) => SendToDetection?.Invoke(this, EventArgs.Empty)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripButton("傳送至檢測 →", null, (s, e) => SendToDetection?.Invoke(this, EventArgs.Empty)) { DisplayStyle = ToolStripItemDisplayStyle.Text });
 
-        leftPanel.Controls.Add(toolbar);
-
-        // 影像畫布
-        _canvas = new DualImageCanvas { Dock = DockStyle.Fill };
-        leftPanel.Controls.Add(_canvas);
-
-        // 品質指標
+        // 品質指標 (底部)
         _qualityIndicator = new QualityIndicator
         {
             Dock = DockStyle.Bottom,
-            Height = 160,
+            Height = 150,
             BorderStyle = BorderStyle.FixedSingle
         };
+
+        // 影像畫布 (填滿)
+        _canvas = new DualImageCanvas { Dock = DockStyle.Fill };
+
+        // 按正確順序加入控件 (後加的先處理 Dock)
+        leftPanel.Controls.Add(_canvas);
         leftPanel.Controls.Add(_qualityIndicator);
+        leftPanel.Controls.Add(toolbar);
 
         mainSplit.Panel1.Controls.Add(leftPanel);
 
-        // 右側：管線設定
+        // ===== 右側：管線設定 =====
         var rightPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(5) };
 
-        // 管線列表
-        var pipelineGroup = new GroupBox { Text = "處理管線", Dock = DockStyle.Top, Height = 200 };
+        // 狀態標籤 (底部)
+        _statusLabel = new Label
+        {
+            Dock = DockStyle.Bottom,
+            Height = 25,
+            TextAlign = ContentAlignment.MiddleLeft,
+            BorderStyle = BorderStyle.FixedSingle
+        };
 
-        _pipelineList = new ListBox { Dock = DockStyle.Fill };
-        _pipelineList.SelectedIndexChanged += PipelineList_SelectedIndexChanged;
-        pipelineGroup.Controls.Add(_pipelineList);
+        // 參數設定 (填滿剩餘空間)
+        var paramGroup = new GroupBox { Text = "步驟參數", Dock = DockStyle.Fill, Padding = new Padding(5) };
+        _parameterGrid = new PropertyGrid { Dock = DockStyle.Fill, HelpVisible = true };
+        _parameterGrid.PropertyValueChanged += (s, e) => { if (_livePreviewCheck.Checked) ExecutePipeline(); };
+        paramGroup.Controls.Add(_parameterGrid);
 
-        var pipelineButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 30, FlowDirection = FlowDirection.LeftToRight };
-        pipelineButtons.Controls.Add(CreateButton("上移", () => MoveStep(-1)));
-        pipelineButtons.Controls.Add(CreateButton("下移", () => MoveStep(1)));
-        pipelineButtons.Controls.Add(CreateButton("刪除", DeleteStep));
-        pipelineButtons.Controls.Add(CreateButton("清空", () => { _pipelineManager.Clear(); RefreshPipelineList(); }));
-        pipelineGroup.Controls.Add(pipelineButtons);
-
-        rightPanel.Controls.Add(pipelineGroup);
-
-        // 新增步驟
-        var addGroup = new GroupBox { Text = "新增步驟", Dock = DockStyle.Top, Height = 80, Top = 210 };
-        var addPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
-        addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
-        addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+        // 新增步驟區 (中間)
+        var addGroup = new GroupBox { Text = "新增步驟", Dock = DockStyle.Top, Height = 90, Padding = new Padding(5) };
+        var addPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Padding = new Padding(3)
+        };
+        addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 75));
+        addPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        addPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        addPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         _stepTypeCombo = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
         foreach (var category in StepFactory.GetAllCategories())
@@ -121,26 +129,41 @@ public class PreprocessingPage : UserControl
         }
         if (_stepTypeCombo.Items.Count > 0) _stepTypeCombo.SelectedIndex = 0;
 
-        addPanel.Controls.Add(_stepTypeCombo, 0, 0);
-        addPanel.Controls.Add(CreateButton("新增", AddStep), 1, 0);
+        var addBtn = new Button { Text = "新增", Dock = DockStyle.Fill };
+        addBtn.Click += (s, e) => AddStep();
 
         _livePreviewCheck = new CheckBox { Text = "即時預覽", Checked = true, Dock = DockStyle.Fill };
         _livePreviewCheck.CheckedChanged += (s, e) => { if (_livePreviewCheck.Checked) ExecutePipeline(); };
+
+        var applyBtn = new Button { Text = "套用", Dock = DockStyle.Fill };
+        applyBtn.Click += (s, e) => ExecutePipeline();
+
+        addPanel.Controls.Add(_stepTypeCombo, 0, 0);
+        addPanel.Controls.Add(addBtn, 1, 0);
         addPanel.Controls.Add(_livePreviewCheck, 0, 1);
-        addPanel.Controls.Add(CreateButton("套用", () => ExecutePipeline()), 1, 1);
-
+        addPanel.Controls.Add(applyBtn, 1, 1);
         addGroup.Controls.Add(addPanel);
-        rightPanel.Controls.Add(addGroup);
 
-        // 參數設定
-        var paramGroup = new GroupBox { Text = "步驟參數", Dock = DockStyle.Fill };
-        _parameterGrid = new PropertyGrid { Dock = DockStyle.Fill };
-        _parameterGrid.PropertyValueChanged += (s, e) => { if (_livePreviewCheck.Checked) ExecutePipeline(); };
-        paramGroup.Controls.Add(_parameterGrid);
+        // 管線列表 (上方)
+        var pipelineGroup = new GroupBox { Text = "處理管線", Dock = DockStyle.Top, Height = 220 };
+        _pipelineList = new ListBox { Dock = DockStyle.Fill };
+        _pipelineList.SelectedIndexChanged += PipelineList_SelectedIndexChanged;
+        _pipelineList.DoubleClick += (s, e) => ToggleStepEnabled();
+
+        var pipelineButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 32, FlowDirection = FlowDirection.LeftToRight };
+        pipelineButtons.Controls.Add(CreateButton("↑上移", () => MoveStep(-1)));
+        pipelineButtons.Controls.Add(CreateButton("↓下移", () => MoveStep(1)));
+        pipelineButtons.Controls.Add(CreateButton("刪除", DeleteStep));
+        pipelineButtons.Controls.Add(CreateButton("啟用/停用", ToggleStepEnabled));
+        pipelineButtons.Controls.Add(CreateButton("清空", () => { _pipelineManager.Clear(); RefreshPipelineList(); }));
+
+        pipelineGroup.Controls.Add(_pipelineList);
+        pipelineGroup.Controls.Add(pipelineButtons);
+
+        // 按正確順序加入右側控件
         rightPanel.Controls.Add(paramGroup);
-
-        // 狀態標籤
-        _statusLabel = new Label { Dock = DockStyle.Bottom, Height = 25, TextAlign = ContentAlignment.MiddleLeft };
+        rightPanel.Controls.Add(addGroup);
+        rightPanel.Controls.Add(pipelineGroup);
         rightPanel.Controls.Add(_statusLabel);
 
         mainSplit.Panel2.Controls.Add(rightPanel);
@@ -149,7 +172,7 @@ public class PreprocessingPage : UserControl
 
     private Button CreateButton(string text, Action onClick)
     {
-        var btn = new Button { Text = text, Width = 60, Height = 25 };
+        var btn = new Button { Text = text, Width = 70, Height = 26 };
         btn.Click += (s, e) => onClick();
         return btn;
     }
@@ -161,6 +184,7 @@ public class PreprocessingPage : UserControl
             if (_imageManager.OriginalImage != null)
             {
                 _canvas.SetOriginalImage(_imageManager.OriginalImage);
+                // 只在載入時分析一次品質
                 AnalyzeQuality();
             }
         };
@@ -188,12 +212,21 @@ public class PreprocessingPage : UserControl
         {
             try
             {
+                Cursor = Cursors.WaitCursor;
+                _statusLabel.Text = "載入中...";
+                Application.DoEvents();
+
                 _imageManager.LoadImage(dialog.FileName);
                 _statusLabel.Text = $"已載入: {Path.GetFileName(dialog.FileName)}";
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"載入失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _statusLabel.Text = "載入失敗";
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
             }
         }
     }
@@ -245,6 +278,19 @@ public class PreprocessingPage : UserControl
         _parameterGrid.SelectedObject = step;
     }
 
+    private void ToggleStepEnabled()
+    {
+        int idx = _pipelineList.SelectedIndex;
+        var step = _pipelineManager.GetStep(idx);
+        if (step != null)
+        {
+            step.IsEnabled = !step.IsEnabled;
+            RefreshPipelineList();
+            _pipelineList.SelectedIndex = idx;
+            if (_livePreviewCheck.Checked) ExecutePipeline();
+        }
+    }
+
     private void AddStep()
     {
         if (_stepTypeCombo.SelectedItem is StepItem item)
@@ -286,6 +332,10 @@ public class PreprocessingPage : UserControl
 
         try
         {
+            Cursor = Cursors.WaitCursor;
+            _statusLabel.Text = "處理中...";
+            Application.DoEvents();
+
             var startTime = DateTime.Now;
             using var result = _pipelineManager.Execute(_imageManager.OriginalImage);
             var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
@@ -297,12 +347,17 @@ public class PreprocessingPage : UserControl
         {
             _statusLabel.Text = $"處理失敗: {ex.Message}";
         }
+        finally
+        {
+            Cursor = Cursors.Default;
+        }
     }
 
     private void ResetPipeline()
     {
         _pipelineManager.Clear();
         _imageManager.ResetProcessedImage();
+        _statusLabel.Text = "已重置";
     }
 
     private void PresetCombo_SelectedIndexChanged(object? sender, EventArgs e)

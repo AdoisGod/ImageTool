@@ -43,15 +43,15 @@ public class DetectionPage : UserControl
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 300,
-            FixedPanel = FixedPanel.Panel2
+            SplitterDistance = 800,
+            FixedPanel = FixedPanel.None
         };
 
-        // 左側
+        // ===== 左側 =====
         var leftPanel = new Panel { Dock = DockStyle.Fill };
 
         // 工具列
-        var toolbar = new ToolStrip();
+        var toolbar = new ToolStrip { Dock = DockStyle.Top };
         toolbar.Items.Add(new ToolStripButton("使用原圖", null, (s, e) => { _useOriginalImage = true; UpdateImage(); }) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripButton("使用處理後", null, (s, e) => { _useOriginalImage = false; UpdateImage(); }) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
@@ -59,27 +59,35 @@ public class DetectionPage : UserControl
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(new ToolStripButton("清除所有", null, (s, e) => ClearAll()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripButton("匯出CSV", null, (s, e) => ExportCsv()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
-        leftPanel.Controls.Add(toolbar);
 
-        // 工具選擇
-        var toolPanel = new Panel { Dock = DockStyle.Top, Height = 40, Padding = new Padding(5) };
-        toolPanel.Controls.Add(new Label { Text = "檢測工具:", Location = new System.Drawing.Point(5, 10), AutoSize = true });
+        // 工具選擇面板
+        var toolSelectPanel = new Panel { Dock = DockStyle.Top, Height = 40 };
+        var toolLabel = new Label { Text = "檢測工具:", Location = new System.Drawing.Point(10, 10), AutoSize = true };
         _toolCombo = new ComboBox
         {
-            Location = new System.Drawing.Point(70, 7),
-            Width = 150,
+            Location = new System.Drawing.Point(80, 7),
+            Width = 140,
             DropDownStyle = ComboBoxStyle.DropDownList
         };
         _toolCombo.Items.AddRange(new[] { "選擇工具...", "找圓 (霍夫)", "找圓 (邊緣擬合)", "找線 (卡尺)", "找線 (霍夫)", "找點 (角點)", "找輪廓" });
         _toolCombo.SelectedIndex = 0;
         _toolCombo.SelectedIndexChanged += ToolCombo_SelectedIndexChanged;
-        toolPanel.Controls.Add(_toolCombo);
 
-        var detectBtn = new Button { Text = "檢測", Location = new System.Drawing.Point(230, 6), Width = 60 };
+        var detectBtn = new Button { Text = "執行檢測", Location = new System.Drawing.Point(230, 6), Width = 80, Height = 26 };
         detectBtn.Click += (s, e) => ExecuteDetection();
-        toolPanel.Controls.Add(detectBtn);
 
-        leftPanel.Controls.Add(toolPanel);
+        var tipLabel = new Label { Text = "提示: 在影像上框選 ROI 區域", Location = new System.Drawing.Point(320, 10), AutoSize = true, ForeColor = Color.Gray };
+
+        toolSelectPanel.Controls.AddRange(new Control[] { toolLabel, _toolCombo, detectBtn, tipLabel });
+
+        // 狀態
+        _statusLabel = new Label
+        {
+            Dock = DockStyle.Bottom,
+            Height = 25,
+            TextAlign = ContentAlignment.MiddleLeft,
+            BorderStyle = BorderStyle.FixedSingle
+        };
 
         // 畫布
         _canvas = new ImageCanvas { Dock = DockStyle.Fill, AllowDrop = true };
@@ -91,34 +99,55 @@ public class DetectionPage : UserControl
         };
         _canvas.RoiSelected += Canvas_RoiSelected;
         _canvas.ObjectSelected += (s, obj) => SelectObject(obj);
-        leftPanel.Controls.Add(_canvas);
 
-        // 狀態
-        _statusLabel = new Label { Dock = DockStyle.Bottom, Height = 25 };
+        // 按正確順序加入
+        leftPanel.Controls.Add(_canvas);
         leftPanel.Controls.Add(_statusLabel);
+        leftPanel.Controls.Add(toolSelectPanel);
+        leftPanel.Controls.Add(toolbar);
 
         mainSplit.Panel1.Controls.Add(leftPanel);
 
-        // 右側
+        // ===== 右側 =====
         var rightPanel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(5) };
 
-        // 物件樹
-        var treeGroup = new GroupBox { Text = "檢測物件", Dock = DockStyle.Top, Height = 250 };
+        // 工具選項面板 (底部)
+        _toolOptions = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 150,
+            BorderStyle = BorderStyle.FixedSingle,
+            AutoScroll = true,
+            Padding = new Padding(5)
+        };
+        var toolOptionsLabel = new Label { Text = "工具參數", Dock = DockStyle.Top, Height = 20, Font = new Font(Font, FontStyle.Bold) };
+        _toolOptions.Controls.Add(toolOptionsLabel);
+
+        // 屬性 (填滿)
+        var propGroup = new GroupBox { Text = "物件屬性", Dock = DockStyle.Fill, Padding = new Padding(5) };
+        _propertyGrid = new PropertyGrid { Dock = DockStyle.Fill, HelpVisible = false };
+        propGroup.Controls.Add(_propertyGrid);
+
+        // 物件樹 (上方)
+        var treeGroup = new GroupBox { Text = "檢測物件", Dock = DockStyle.Top, Height = 280 };
         _objectTree = new TreeView { Dock = DockStyle.Fill, ShowRootLines = true };
         _objectTree.AfterSelect += ObjectTree_AfterSelect;
         _objectTree.KeyDown += (s, e) => { if (e.KeyCode == Keys.Delete) DeleteSelected(); };
+
+        var treeButtons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 30, FlowDirection = FlowDirection.LeftToRight };
+        var deleteBtn = new Button { Text = "刪除選取", Width = 70, Height = 24 };
+        deleteBtn.Click += (s, e) => DeleteSelected();
+        var clearBtn = new Button { Text = "清除全部", Width = 70, Height = 24 };
+        clearBtn.Click += (s, e) => ClearAll();
+        treeButtons.Controls.AddRange(new Control[] { deleteBtn, clearBtn });
+
         treeGroup.Controls.Add(_objectTree);
-        rightPanel.Controls.Add(treeGroup);
+        treeGroup.Controls.Add(treeButtons);
 
-        // 屬性
-        var propGroup = new GroupBox { Text = "物件屬性", Dock = DockStyle.Fill };
-        _propertyGrid = new PropertyGrid { Dock = DockStyle.Fill };
-        propGroup.Controls.Add(_propertyGrid);
+        // 按正確順序加入右側
         rightPanel.Controls.Add(propGroup);
-
-        // 工具選項面板
-        _toolOptions = new Panel { Dock = DockStyle.Bottom, Height = 120, BorderStyle = BorderStyle.FixedSingle };
         rightPanel.Controls.Add(_toolOptions);
+        rightPanel.Controls.Add(treeGroup);
 
         mainSplit.Panel2.Controls.Add(rightPanel);
         Controls.Add(mainSplit);
@@ -146,46 +175,54 @@ public class DetectionPage : UserControl
 
     private void ToolCombo_SelectedIndexChanged(object? sender, EventArgs e)
     {
-        _toolOptions.Controls.Clear();
+        // 清除舊的控件，保留標題
+        while (_toolOptions.Controls.Count > 1)
+        {
+            _toolOptions.Controls.RemoveAt(1);
+        }
+
+        int y = 25;
 
         switch (_toolCombo.SelectedIndex)
         {
             case 1: // 找圓 (霍夫)
                 _currentDetector = new CircleDetector { Method = CircleDetectionMethod.Hough };
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
-                AddToolOption("dp", 1.0, 0.5, 3.0);
-                AddToolOption("minDist", 50, 10, 500);
-                AddToolOption("param1", 100, 10, 300);
-                AddToolOption("param2", 30, 10, 100);
+                y = AddToolOption(y, "dp", 1.0, 0.5, 3.0, v => ((CircleDetector)_currentDetector!).Dp = v);
+                y = AddToolOption(y, "minDist", 50, 10, 500, v => ((CircleDetector)_currentDetector!).MinDist = v);
+                y = AddToolOption(y, "param1", 100, 10, 300, v => ((CircleDetector)_currentDetector!).Param1 = v);
+                y = AddToolOption(y, "param2", 30, 10, 100, v => ((CircleDetector)_currentDetector!).Param2 = v);
                 break;
             case 2: // 找圓 (邊緣擬合)
                 _currentDetector = new CircleDetector { Method = CircleDetectionMethod.EdgeFitting };
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
-                AddToolOption("Canny低", 50, 10, 200);
-                AddToolOption("Canny高", 150, 50, 300);
+                y = AddToolOption(y, "Canny低", 50, 10, 200, v => ((CircleDetector)_currentDetector!).CannyThreshold1 = v);
+                y = AddToolOption(y, "Canny高", 150, 50, 300, v => ((CircleDetector)_currentDetector!).CannyThreshold2 = v);
                 break;
             case 3: // 找線 (卡尺)
                 _currentDetector = new LineDetector { Method = LineDetectionMethod.Caliper };
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Line;
-                AddToolOption("採樣數", 20, 5, 50);
-                AddToolOption("剖面長", 30, 10, 100);
-                AddToolOption("閾值", 30, 5, 100);
+                y = AddToolOption(y, "採樣數", 20, 5, 50, v => ((LineDetector)_currentDetector!).CaliperCount = (int)v);
+                y = AddToolOption(y, "剖面長", 30, 10, 100, v => ((LineDetector)_currentDetector!).ProfileLength = (int)v);
+                y = AddToolOption(y, "閾值", 30, 5, 100, v => ((LineDetector)_currentDetector!).EdgeThreshold = (int)v);
                 break;
             case 4: // 找線 (霍夫)
                 _currentDetector = new LineDetector { Method = LineDetectionMethod.Hough };
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
+                y = AddToolOption(y, "閾值", 50, 10, 200, v => ((LineDetector)_currentDetector!).HoughThreshold = v);
+                y = AddToolOption(y, "最小長度", 50, 10, 200, v => ((LineDetector)_currentDetector!).MinLineLength = v);
                 break;
             case 5: // 找點
                 _currentDetector = new PointDetector();
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
-                AddToolOption("最大數量", 100, 10, 500);
-                AddToolOption("最小距離", 10, 1, 50);
+                y = AddToolOption(y, "最大數量", 100, 10, 500, v => ((PointDetector)_currentDetector!).MaxCorners = (int)v);
+                y = AddToolOption(y, "最小距離", 10, 1, 50, v => ((PointDetector)_currentDetector!).MinDistance = v);
                 break;
             case 6: // 找輪廓
                 _currentDetector = new ContourDetector();
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
-                AddToolOption("最小面積", 100, 10, 10000);
-                AddToolOption("最大面積", 100000, 100, 1000000);
+                y = AddToolOption(y, "最小面積", 100, 10, 50000, v => ((ContourDetector)_currentDetector!).MinArea = v);
+                y = AddToolOption(y, "最大面積", 100000, 100, 1000000, v => ((ContourDetector)_currentDetector!).MaxArea = v);
                 break;
             default:
                 _currentDetector = null;
@@ -194,23 +231,22 @@ public class DetectionPage : UserControl
         }
     }
 
-    private int _optionY = 5;
-
-    private void AddToolOption(string label, double defaultValue, double min, double max)
+    private int AddToolOption(int y, string label, double defaultValue, double min, double max, Action<double> onValueChanged)
     {
-        var lbl = new Label { Text = $"{label}:", Location = new System.Drawing.Point(5, _optionY + 3), AutoSize = true };
+        var lbl = new Label { Text = $"{label}:", Location = new System.Drawing.Point(5, y + 3), AutoSize = true };
         var num = new NumericUpDown
         {
-            Location = new System.Drawing.Point(80, _optionY),
+            Location = new System.Drawing.Point(90, y),
             Width = 80,
             Minimum = (decimal)min,
             Maximum = (decimal)max,
             Value = (decimal)defaultValue,
-            DecimalPlaces = 1
+            DecimalPlaces = defaultValue % 1 == 0 ? 0 : 1
         };
+        num.ValueChanged += (s, e) => onValueChanged((double)num.Value);
         _toolOptions.Controls.Add(lbl);
         _toolOptions.Controls.Add(num);
-        _optionY += 28;
+        return y + 28;
     }
 
     private void Canvas_RoiSelected(object? sender, DrawingRectangleF roi)
@@ -236,6 +272,11 @@ public class DetectionPage : UserControl
 
         try
         {
+            // 顯示處理中指示
+            Cursor = Cursors.WaitCursor;
+            _statusLabel.Text = "檢測中...";
+            Application.DoEvents();
+
             var startTime = DateTime.Now;
             var results = _currentDetector.Detect(mat, roi);
             var elapsed = (DateTime.Now - startTime).TotalMilliseconds;
@@ -251,6 +292,11 @@ public class DetectionPage : UserControl
         catch (Exception ex)
         {
             MessageBox.Show($"檢測失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _statusLabel.Text = "檢測失敗";
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
         }
     }
 
@@ -258,21 +304,21 @@ public class DetectionPage : UserControl
     {
         _objectTree.Nodes.Clear();
 
-        var circleNode = _objectTree.Nodes.Add("circles", "圓形");
-        var lineNode = _objectTree.Nodes.Add("lines", "直線");
-        var pointNode = _objectTree.Nodes.Add("points", "點");
-        var contourNode = _objectTree.Nodes.Add("contours", "輪廓");
-        var measureNode = _objectTree.Nodes.Add("measures", "量測");
+        var circleNode = _objectTree.Nodes.Add("circles", $"圓形 ({_resultManager.Circles.Count()})");
+        var lineNode = _objectTree.Nodes.Add("lines", $"直線 ({_resultManager.Lines.Count()})");
+        var pointNode = _objectTree.Nodes.Add("points", $"點 ({_resultManager.Points.Count()})");
+        var contourNode = _objectTree.Nodes.Add("contours", $"輪廓 ({_resultManager.Contours.Count()})");
+        var measureNode = _objectTree.Nodes.Add("measures", $"量測 ({_resultManager.Measurements.Count()})");
 
         foreach (var obj in _resultManager.Objects)
         {
             var node = obj switch
             {
-                CircleObject => circleNode.Nodes.Add(obj.Id, obj.Name),
-                LineObject => lineNode.Nodes.Add(obj.Id, obj.Name),
-                PointObject => pointNode.Nodes.Add(obj.Id, obj.Name),
-                ContourObject => contourNode.Nodes.Add(obj.Id, obj.Name),
-                MeasurementResult => measureNode.Nodes.Add(obj.Id, obj.Name),
+                CircleObject => circleNode.Nodes.Add(obj.Id, $"{obj.Name}: {obj.GetSummary()}"),
+                LineObject => lineNode.Nodes.Add(obj.Id, $"{obj.Name}: {obj.GetSummary()}"),
+                PointObject => pointNode.Nodes.Add(obj.Id, $"{obj.Name}: {obj.GetSummary()}"),
+                ContourObject => contourNode.Nodes.Add(obj.Id, $"{obj.Name}: {obj.GetSummary()}"),
+                MeasurementResult => measureNode.Nodes.Add(obj.Id, $"{obj.Name}: {obj.GetSummary()}"),
                 _ => null
             };
             if (node != null) node.Tag = obj;
@@ -313,6 +359,7 @@ public class DetectionPage : UserControl
     {
         _resultManager.Clear();
         _canvas.ClearObjects();
+        _statusLabel.Text = "已清除所有物件";
     }
 
     private void SetCalibration()
@@ -320,30 +367,42 @@ public class DetectionPage : UserControl
         using var dialog = new Form
         {
             Text = "校正設定",
-            Size = new System.Drawing.Size(300, 150),
+            Size = new System.Drawing.Size(320, 180),
             FormBorderStyle = FormBorderStyle.FixedDialog,
-            StartPosition = FormStartPosition.CenterParent
+            StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false,
+            MinimizeBox = false
         };
 
-        var label = new Label { Text = "解析度 (mm/pixel):", Location = new System.Drawing.Point(20, 20), AutoSize = true };
+        var label = new Label { Text = "解析度 (mm/pixel):", Location = new System.Drawing.Point(20, 25), AutoSize = true };
         var numBox = new NumericUpDown
         {
-            Location = new System.Drawing.Point(130, 18),
-            Width = 100,
+            Location = new System.Drawing.Point(140, 23),
+            Width = 120,
             DecimalPlaces = 6,
             Minimum = 0.000001m,
             Maximum = 100,
-            Value = (decimal)_calibration.Resolution
+            Value = (decimal)_calibration.Resolution,
+            Increment = 0.001m
         };
-        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(100, 70) };
+        var currentLabel = new Label
+        {
+            Text = $"當前: {_calibration.GetResolutionString()}",
+            Location = new System.Drawing.Point(20, 60),
+            AutoSize = true,
+            ForeColor = Color.Gray
+        };
+        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(80, 100), Width = 70 };
+        var cancelBtn = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new System.Drawing.Point(160, 100), Width = 70 };
 
-        dialog.Controls.AddRange(new Control[] { label, numBox, okBtn });
+        dialog.Controls.AddRange(new Control[] { label, numBox, currentLabel, okBtn, cancelBtn });
         dialog.AcceptButton = okBtn;
+        dialog.CancelButton = cancelBtn;
 
         if (dialog.ShowDialog() == DialogResult.OK)
         {
             _calibration.SetResolution((double)numBox.Value);
-            _statusLabel.Text = $"校正設定: {_calibration.GetResolutionString()}";
+            _statusLabel.Text = $"校正已設定: {_calibration.GetResolutionString()}";
         }
     }
 
@@ -374,11 +433,16 @@ public class DetectionPage : UserControl
         {
             try
             {
+                Cursor = Cursors.WaitCursor;
                 _imageManager.LoadImage(files[0]);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"載入失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
             }
         }
     }
