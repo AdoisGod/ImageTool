@@ -38,7 +38,7 @@ public class LineDetector : DetectorBase
 
     // 霍夫線參數
     public double HoughThreshold { get; set; } = 50;
-    public double MinLineLength { get; set; } = 50;
+    public double MinLineLength { get; set; } = 100;  // 增加預設值避免同一條線被分成多段
     public double MaxLineGap { get; set; } = 10;
 
     // 搜尋線 (由使用者繪製)

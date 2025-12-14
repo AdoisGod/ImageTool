@@ -26,6 +26,7 @@ public class DetectionPage : UserControl
 
     private IDetector? _currentDetector;
     private bool _useOriginalImage = false;
+    private bool _isSelectingObject = false; // 防止選取事件無限遞迴
 
     public DetectionPage(ImageManager imageManager, CalibrationManager calibration)
     {
@@ -98,6 +99,7 @@ public class DetectionPage : UserControl
                 e.Effect = DragDropEffects.Copy;
         };
         _canvas.RoiSelected += Canvas_RoiSelected;
+        _canvas.LineDrawn += Canvas_LineDrawn;
         _canvas.ObjectSelected += (s, obj) => SelectObject(obj);
 
         // 按正確順序加入
@@ -210,7 +212,8 @@ public class DetectionPage : UserControl
                 _currentDetector = new LineDetector { Method = LineDetectionMethod.Hough };
                 _canvas.CurrentDrawMode = ImageCanvas.DrawMode.Rectangle;
                 y = AddToolOption(y, "閾值", 50, 10, 200, v => ((LineDetector)_currentDetector!).HoughThreshold = v);
-                y = AddToolOption(y, "最小長度", 50, 10, 200, v => ((LineDetector)_currentDetector!).MinLineLength = v);
+                y = AddToolOption(y, "最小長度", 100, 10, 500, v => ((LineDetector)_currentDetector!).MinLineLength = v);
+                y = AddToolOption(y, "最大間隙", 10, 1, 50, v => ((LineDetector)_currentDetector!).MaxLineGap = v);
                 break;
             case 5: // 找點
                 _currentDetector = new PointDetector();
@@ -253,6 +256,17 @@ public class DetectionPage : UserControl
     {
         if (_currentDetector == null) return;
         ExecuteDetection(roi);
+    }
+
+    private void Canvas_LineDrawn(object? sender, (DrawingPointF Start, DrawingPointF End) line)
+    {
+        // 卡尺法：設定搜尋線並執行檢測
+        if (_currentDetector is LineDetector lineDetector && lineDetector.Method == LineDetectionMethod.Caliper)
+        {
+            lineDetector.SearchStart = line.Start;
+            lineDetector.SearchEnd = line.End;
+            ExecuteDetection(null);
+        }
     }
 
     private void ExecuteDetection(DrawingRectangleF? roi = null)
@@ -337,12 +351,23 @@ public class DetectionPage : UserControl
 
     private void SelectObject(IGeometryObject obj)
     {
-        _resultManager.Select(obj);
-        _canvas.SelectObject(obj);
+        // 防止無限遞迴
+        if (_isSelectingObject) return;
+        _isSelectingObject = true;
 
-        // 顯示屬性
-        var details = obj.GetDetails();
-        _propertyGrid.SelectedObject = new DictionaryPropertyGridAdapter(details);
+        try
+        {
+            _resultManager.Select(obj);
+            _canvas.SelectObject(obj);
+
+            // 顯示屬性
+            var details = obj.GetDetails();
+            _propertyGrid.SelectedObject = new DictionaryPropertyGridAdapter(details);
+        }
+        finally
+        {
+            _isSelectingObject = false;
+        }
     }
 
     private void DeleteSelected()
