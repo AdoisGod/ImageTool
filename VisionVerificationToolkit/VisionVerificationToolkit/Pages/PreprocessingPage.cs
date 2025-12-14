@@ -308,7 +308,7 @@ public class PreprocessingPage : UserControl
     private void PresetCombo_SelectedIndexChanged(object? sender, EventArgs e)
     {
         var combo = sender as ToolStripComboBox;
-        if (combo?.SelectedIndex <= 0) return;
+        if (combo == null || combo.SelectedIndex <= 0) return;
 
         _pipelineManager.Clear();
 

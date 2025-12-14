@@ -146,7 +146,7 @@ public class GammaCorrectionStep : PipelineStepBase
         }
 
         var output = new Mat();
-        using var lut = new Mat(1, 256, MatType.CV_8U, _lookupTable);
+        using var lut = new Mat(1, 256, MatType.CV_8U, _lookupTable!);
         Cv2.LUT(input, lut, output);
         return output;
     }

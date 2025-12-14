@@ -109,7 +109,11 @@ public class PointDetector : DetectorBase
             roiImage,
             MaxCorners,
             QualityLevel,
-            MinDistance);
+            MinDistance,
+            null,  // mask
+            3,     // blockSize
+            false, // useHarrisDetector
+            0.04); // k
 
         foreach (var corner in corners)
         {
