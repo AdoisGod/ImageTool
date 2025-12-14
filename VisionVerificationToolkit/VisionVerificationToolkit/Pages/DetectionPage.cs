@@ -63,7 +63,12 @@ public class DetectionPage : UserControl
         toolbar.Items.Add(new ToolStripButton("校正設定", null, (s, e) => SetCalibration()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(new ToolStripButton("清除所有", null, (s, e) => ClearAll()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
-        toolbar.Items.Add(new ToolStripButton("匯出CSV", null, (s, e) => ExportCsv()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripSeparator());
+        toolbar.Items.Add(new ToolStripLabel("匯出:"));
+        toolbar.Items.Add(new ToolStripButton("CSV", null, (s, e) => ExportCsv()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripButton("JSON", null, (s, e) => ExportJson()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripButton("PNG", null, (s, e) => ExportAnnotatedImage()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripButton("HTML", null, (s, e) => ExportHtmlReport()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
 
         // 工具選擇面板
         var toolSelectPanel = new Panel { Dock = DockStyle.Top, Height = 40 };
@@ -809,42 +814,140 @@ public class DetectionPage : UserControl
         using var dialog = new Form
         {
             Text = "校正設定",
-            Size = new System.Drawing.Size(320, 180),
+            Size = new System.Drawing.Size(400, 350),
             FormBorderStyle = FormBorderStyle.FixedDialog,
             StartPosition = FormStartPosition.CenterParent,
             MaximizeBox = false,
             MinimizeBox = false
         };
 
-        var label = new Label { Text = "解析度 (mm/pixel):", Location = new System.Drawing.Point(20, 25), AutoSize = true };
-        var numBox = new NumericUpDown
+        var currentLabel = new Label
         {
-            Location = new System.Drawing.Point(140, 23),
-            Width = 120,
+            Text = $"當前: {_calibration.GetResolutionString()}",
+            Location = new System.Drawing.Point(20, 15),
+            AutoSize = true,
+            Font = new Font("Microsoft JhengHei", 9, FontStyle.Bold)
+        };
+
+        // 方法選擇
+        var methodGroup = new GroupBox
+        {
+            Text = "校正方法",
+            Location = new System.Drawing.Point(15, 45),
+            Size = new System.Drawing.Size(355, 200)
+        };
+
+        // 方法1: 手動輸入
+        var manualRadio = new RadioButton { Text = "手動輸入解析度", Location = new System.Drawing.Point(15, 25), AutoSize = true, Checked = true };
+        var manualLabel = new Label { Text = "解析度 (mm/pixel):", Location = new System.Drawing.Point(35, 52), AutoSize = true };
+        var manualNum = new NumericUpDown
+        {
+            Location = new System.Drawing.Point(160, 50),
+            Width = 100,
             DecimalPlaces = 6,
             Minimum = 0.000001m,
             Maximum = 100,
             Value = (decimal)_calibration.Resolution,
             Increment = 0.001m
         };
-        var currentLabel = new Label
-        {
-            Text = $"當前: {_calibration.GetResolutionString()}",
-            Location = new System.Drawing.Point(20, 60),
-            AutoSize = true,
-            ForeColor = Color.Gray
-        };
-        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(80, 100), Width = 70 };
-        var cancelBtn = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new System.Drawing.Point(160, 100), Width = 70 };
 
-        dialog.Controls.AddRange(new Control[] { label, numBox, currentLabel, okBtn, cancelBtn });
+        // 方法2: 圓形校正
+        var circleRadio = new RadioButton { Text = "使用已檢測圓形校正", Location = new System.Drawing.Point(15, 85), AutoSize = true };
+        var circleCombo = new ComboBox { Location = new System.Drawing.Point(35, 110), Width = 150, DropDownStyle = ComboBoxStyle.DropDownList, Enabled = false };
+        var circleDiaLabel = new Label { Text = "實際直徑 (mm):", Location = new System.Drawing.Point(195, 113), AutoSize = true };
+        var circleDiaNum = new NumericUpDown
+        {
+            Location = new System.Drawing.Point(290, 110),
+            Width = 55,
+            DecimalPlaces = 3,
+            Minimum = 0.001m,
+            Maximum = 10000,
+            Value = 10,
+            Enabled = false
+        };
+
+        // 方法3: 兩點距離校正
+        var distRadio = new RadioButton { Text = "使用兩點距離校正", Location = new System.Drawing.Point(15, 145), AutoSize = true };
+        var distLabel1 = new Label { Text = "選取兩點 (Ctrl+點)", Location = new System.Drawing.Point(35, 170), AutoSize = true, ForeColor = Color.Gray };
+        var distActualLabel = new Label { Text = "實際距離 (mm):", Location = new System.Drawing.Point(195, 170), AutoSize = true };
+        var distActualNum = new NumericUpDown
+        {
+            Location = new System.Drawing.Point(290, 167),
+            Width = 55,
+            DecimalPlaces = 3,
+            Minimum = 0.001m,
+            Maximum = 10000,
+            Value = 10,
+            Enabled = false
+        };
+
+        // 填入圓形選項
+        foreach (var c in _resultManager.Circles)
+        {
+            circleCombo.Items.Add($"{c.Name} (D={c.Diameter:F1}px)");
+        }
+        if (circleCombo.Items.Count > 0) circleCombo.SelectedIndex = 0;
+
+        // 啟用/禁用控件
+        manualRadio.CheckedChanged += (s, e) => { manualNum.Enabled = manualRadio.Checked; };
+        circleRadio.CheckedChanged += (s, e) => { circleCombo.Enabled = circleDiaNum.Enabled = circleRadio.Checked; };
+        distRadio.CheckedChanged += (s, e) => { distActualNum.Enabled = distRadio.Checked; };
+
+        methodGroup.Controls.AddRange(new Control[] { manualRadio, manualLabel, manualNum, circleRadio, circleCombo, circleDiaLabel, circleDiaNum, distRadio, distLabel1, distActualLabel, distActualNum });
+
+        var okBtn = new Button { Text = "確定", DialogResult = DialogResult.OK, Location = new System.Drawing.Point(120, 265), Width = 70 };
+        var cancelBtn = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new System.Drawing.Point(200, 265), Width = 70 };
+        var resetBtn = new Button { Text = "重置", Location = new System.Drawing.Point(280, 265), Width = 70 };
+        resetBtn.Click += (s, e) =>
+        {
+            _calibration.Reset();
+            currentLabel.Text = $"當前: {_calibration.GetResolutionString()}";
+            manualNum.Value = 1;
+        };
+
+        dialog.Controls.AddRange(new Control[] { currentLabel, methodGroup, okBtn, cancelBtn, resetBtn });
         dialog.AcceptButton = okBtn;
         dialog.CancelButton = cancelBtn;
 
         if (dialog.ShowDialog() == DialogResult.OK)
         {
-            _calibration.SetResolution((double)numBox.Value);
-            _statusLabel.Text = $"校正已設定: {_calibration.GetResolutionString()}";
+            try
+            {
+                if (manualRadio.Checked)
+                {
+                    _calibration.SetResolution((double)manualNum.Value);
+                }
+                else if (circleRadio.Checked && circleCombo.SelectedIndex >= 0)
+                {
+                    var circles = _resultManager.Circles.ToList();
+                    if (circleCombo.SelectedIndex < circles.Count)
+                    {
+                        var circle = circles[circleCombo.SelectedIndex];
+                        _calibration.CalibrateWithCircle(circle.Diameter, (double)circleDiaNum.Value);
+                    }
+                }
+                else if (distRadio.Checked)
+                {
+                    var points = GetSelectedObjectsFromTree().OfType<PointObject>().ToList();
+                    if (points.Count >= 2)
+                    {
+                        double dx = points[1].X - points[0].X;
+                        double dy = points[1].Y - points[0].Y;
+                        double distPx = Math.Sqrt(dx * dx + dy * dy);
+                        _calibration.CalibrateWithDistance(distPx, (double)distActualNum.Value);
+                    }
+                    else
+                    {
+                        MessageBox.Show("請先 Ctrl+點擊選取兩個點", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                }
+                _statusLabel.Text = $"校正已設定: {_calibration.GetResolutionString()}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"校正失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 
@@ -866,6 +969,233 @@ public class DetectionPage : UserControl
                 writer.WriteLine($"{obj.Id},{obj.Name},{obj.ObjectType},\"{obj.GetSummary()}\"");
             }
             MessageBox.Show("匯出成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void ExportJson()
+    {
+        if (_resultManager.Objects.Count == 0)
+        {
+            MessageBox.Show("無物件可匯出", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new SaveFileDialog { Filter = "JSON|*.json", FileName = "detection_results.json" };
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            var exportData = new
+            {
+                ExportTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                Calibration = new
+                {
+                    _calibration.IsCalibrated,
+                    _calibration.Resolution,
+                    Unit = _calibration.IsCalibrated ? "mm" : "px"
+                },
+                Objects = _resultManager.Objects.Select(obj => new
+                {
+                    obj.Id,
+                    obj.Name,
+                    obj.ObjectType,
+                    Summary = obj.GetSummary(),
+                    Details = obj.GetDetails()
+                }).ToList()
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(exportData, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+            });
+            File.WriteAllText(dialog.FileName, json);
+            MessageBox.Show("JSON 匯出成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void ExportAnnotatedImage()
+    {
+        var mat = _useOriginalImage ? _imageManager.OriginalImage : _imageManager.ProcessedImage;
+        if (mat == null)
+        {
+            MessageBox.Show("無影像可匯出", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new SaveFileDialog { Filter = "PNG|*.png|JPEG|*.jpg", FileName = "annotated_image.png" };
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            try
+            {
+                using var annotated = mat.Clone();
+
+                // 轉換為彩色以繪製標註
+                using var colorMat = annotated.Channels() == 1
+                    ? annotated.CvtColor(ColorConversionCodes.GRAY2BGR)
+                    : annotated.Clone();
+
+                foreach (var obj in _resultManager.Objects)
+                {
+                    var color = new Scalar(obj.DisplayColor.B, obj.DisplayColor.G, obj.DisplayColor.R);
+
+                    if (obj is CircleObject circle)
+                    {
+                        Cv2.Circle(colorMat, new OpenCvSharp.Point(circle.CenterX, circle.CenterY), (int)circle.Radius, color, 2);
+                        Cv2.Circle(colorMat, new OpenCvSharp.Point(circle.CenterX, circle.CenterY), 3, color, -1);
+                        Cv2.PutText(colorMat, circle.Name, new OpenCvSharp.Point(circle.CenterX + 5, circle.CenterY - 5),
+                            HersheyFonts.HersheySimplex, 0.4, color, 1);
+                    }
+                    else if (obj is LineObject line)
+                    {
+                        Cv2.Line(colorMat, new OpenCvSharp.Point(line.StartX, line.StartY),
+                            new OpenCvSharp.Point(line.EndX, line.EndY), color, 2);
+                        Cv2.PutText(colorMat, line.Name, new OpenCvSharp.Point((line.StartX + line.EndX) / 2, (line.StartY + line.EndY) / 2 - 5),
+                            HersheyFonts.HersheySimplex, 0.4, color, 1);
+                    }
+                    else if (obj is PointObject point)
+                    {
+                        Cv2.Circle(colorMat, new OpenCvSharp.Point(point.X, point.Y), 5, color, -1);
+                        Cv2.PutText(colorMat, point.Name, new OpenCvSharp.Point(point.X + 5, point.Y - 5),
+                            HersheyFonts.HersheySimplex, 0.4, color, 1);
+                    }
+                    else if (obj is MeasurementResult measurement && measurement.AnnotationPoints.Count >= 2)
+                    {
+                        var p1 = measurement.AnnotationPoints[0];
+                        var p2 = measurement.AnnotationPoints[1];
+                        Cv2.Line(colorMat, new OpenCvSharp.Point(p1.X, p1.Y),
+                            new OpenCvSharp.Point(p2.X, p2.Y), color, 2);
+                        var midX = (p1.X + p2.X) / 2;
+                        var midY = (p1.Y + p2.Y) / 2;
+                        Cv2.PutText(colorMat, measurement.GetSummary(), new OpenCvSharp.Point(midX, midY - 5),
+                            HersheyFonts.HersheySimplex, 0.4, color, 1);
+                    }
+                }
+
+                colorMat.SaveImage(dialog.FileName);
+                MessageBox.Show("標註影像匯出成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"匯出失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    private void ExportHtmlReport()
+    {
+        if (_resultManager.Objects.Count == 0)
+        {
+            MessageBox.Show("無物件可匯出", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new SaveFileDialog { Filter = "HTML|*.html", FileName = "detection_report.html" };
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine("<!DOCTYPE html>");
+                sb.AppendLine("<html><head><meta charset='utf-8'>");
+                sb.AppendLine("<title>檢測報告</title>");
+                sb.AppendLine("<style>");
+                sb.AppendLine("body { font-family: 'Microsoft JhengHei', Arial, sans-serif; margin: 20px; }");
+                sb.AppendLine("h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }");
+                sb.AppendLine("h2 { color: #666; margin-top: 30px; }");
+                sb.AppendLine("table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }");
+                sb.AppendLine("th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }");
+                sb.AppendLine("th { background-color: #4CAF50; color: white; }");
+                sb.AppendLine("tr:nth-child(even) { background-color: #f2f2f2; }");
+                sb.AppendLine(".summary { background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
+                sb.AppendLine(".img-container { text-align: center; margin: 20px 0; }");
+                sb.AppendLine(".img-container img { max-width: 100%; border: 1px solid #ddd; }");
+                sb.AppendLine("</style></head><body>");
+
+                sb.AppendLine("<h1>機器視覺檢測報告</h1>");
+                sb.AppendLine($"<p>生成時間: {DateTime.Now:yyyy-MM-dd HH:mm:ss}</p>");
+
+                // 摘要
+                sb.AppendLine("<div class='summary'>");
+                sb.AppendLine($"<p><strong>校正狀態:</strong> {(_calibration.IsCalibrated ? "已校正" : "未校正")}</p>");
+                if (_calibration.IsCalibrated)
+                    sb.AppendLine($"<p><strong>解析度:</strong> {_calibration.GetResolutionString()}</p>");
+                sb.AppendLine($"<p><strong>總物件數:</strong> {_resultManager.Objects.Count}</p>");
+                sb.AppendLine($"<p><strong>圓形:</strong> {_resultManager.Circles.Count()}, <strong>直線:</strong> {_resultManager.Lines.Count()}, <strong>點:</strong> {_resultManager.Points.Count()}, <strong>量測:</strong> {_resultManager.Measurements.Count()}</p>");
+                sb.AppendLine("</div>");
+
+                // 嵌入影像 (Base64)
+                var mat = _useOriginalImage ? _imageManager.OriginalImage : _imageManager.ProcessedImage;
+                if (mat != null)
+                {
+                    try
+                    {
+                        using var tempMat = mat.Clone();
+                        var imgBytes = tempMat.ToBytes(".png");
+                        var base64 = Convert.ToBase64String(imgBytes);
+                        sb.AppendLine("<div class='img-container'>");
+                        sb.AppendLine($"<img src='data:image/png;base64,{base64}' alt='檢測影像'/>");
+                        sb.AppendLine("</div>");
+                    }
+                    catch { /* 忽略影像嵌入錯誤 */ }
+                }
+
+                // 圓形表格
+                if (_resultManager.Circles.Any())
+                {
+                    sb.AppendLine("<h2>圓形</h2>");
+                    sb.AppendLine("<table><tr><th>名稱</th><th>中心X</th><th>中心Y</th><th>半徑</th><th>直徑</th></tr>");
+                    foreach (var c in _resultManager.Circles)
+                    {
+                        sb.AppendLine($"<tr><td>{c.Name}</td><td>{c.CenterX:F2}</td><td>{c.CenterY:F2}</td><td>{c.Radius:F2}</td><td>{c.Diameter:F2}</td></tr>");
+                    }
+                    sb.AppendLine("</table>");
+                }
+
+                // 直線表格
+                if (_resultManager.Lines.Any())
+                {
+                    sb.AppendLine("<h2>直線</h2>");
+                    sb.AppendLine("<table><tr><th>名稱</th><th>起點X</th><th>起點Y</th><th>終點X</th><th>終點Y</th><th>長度</th><th>角度</th></tr>");
+                    foreach (var l in _resultManager.Lines)
+                    {
+                        sb.AppendLine($"<tr><td>{l.Name}</td><td>{l.StartX:F2}</td><td>{l.StartY:F2}</td><td>{l.EndX:F2}</td><td>{l.EndY:F2}</td><td>{l.Length:F2}</td><td>{l.AngleDegrees:F2}°</td></tr>");
+                    }
+                    sb.AppendLine("</table>");
+                }
+
+                // 點表格
+                if (_resultManager.Points.Any())
+                {
+                    sb.AppendLine("<h2>點</h2>");
+                    sb.AppendLine("<table><tr><th>名稱</th><th>X</th><th>Y</th></tr>");
+                    foreach (var p in _resultManager.Points)
+                    {
+                        sb.AppendLine($"<tr><td>{p.Name}</td><td>{p.X:F2}</td><td>{p.Y:F2}</td></tr>");
+                    }
+                    sb.AppendLine("</table>");
+                }
+
+                // 量測表格
+                if (_resultManager.Measurements.Any())
+                {
+                    sb.AppendLine("<h2>量測結果</h2>");
+                    sb.AppendLine("<table><tr><th>名稱</th><th>類型</th><th>數值(px)</th><th>數值(mm)</th></tr>");
+                    foreach (var m in _resultManager.Measurements)
+                    {
+                        string mmValue = m.ValueMm.HasValue ? $"{m.ValueMm:F3}" : "-";
+                        sb.AppendLine($"<tr><td>{m.Name}</td><td>{m.Type}</td><td>{m.Value:F3}</td><td>{mmValue}</td></tr>");
+                    }
+                    sb.AppendLine("</table>");
+                }
+
+                sb.AppendLine("</body></html>");
+
+                File.WriteAllText(dialog.FileName, sb.ToString());
+                MessageBox.Show("HTML 報告匯出成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"匯出失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 

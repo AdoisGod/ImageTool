@@ -56,6 +56,9 @@ public class PreprocessingPage : UserControl
         toolbar.Items.Add(new ToolStripButton("載入影像", null, (s, e) => LoadImage()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripButton("儲存結果", null, (s, e) => SaveResult()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
+        toolbar.Items.Add(new ToolStripButton("儲存管線", null, (s, e) => SavePipeline()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripButton("載入管線", null, (s, e) => LoadPipeline()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
+        toolbar.Items.Add(new ToolStripSeparator());
         toolbar.Items.Add(new ToolStripButton("重置", null, (s, e) => ResetPipeline()) { DisplayStyle = ToolStripItemDisplayStyle.Text });
         toolbar.Items.Add(new ToolStripSeparator());
 
@@ -249,6 +252,63 @@ public class PreprocessingPage : UserControl
         {
             _imageManager.SaveProcessedImage(dialog.FileName);
             MessageBox.Show("儲存成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private void SavePipeline()
+    {
+        if (_pipelineManager.Count == 0)
+        {
+            MessageBox.Show("管線中沒有步驟", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Title = "儲存管線",
+            Filter = "管線檔案|*.pipeline.json|JSON|*.json",
+            FileName = "pipeline"
+        };
+
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            try
+            {
+                _pipelineManager.SaveToFile(dialog.FileName);
+                MessageBox.Show("管線儲存成功", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _statusLabel.Text = $"已儲存管線: {Path.GetFileName(dialog.FileName)}";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"儲存失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+
+    private void LoadPipeline()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "載入管線",
+            Filter = "管線檔案|*.pipeline.json;*.json|所有檔案|*.*"
+        };
+
+        if (dialog.ShowDialog() == DialogResult.OK)
+        {
+            try
+            {
+                _pipelineManager.LoadFromFile(dialog.FileName, StepFactory.Create);
+                _statusLabel.Text = $"已載入管線: {Path.GetFileName(dialog.FileName)} ({_pipelineManager.Count} 步驟)";
+
+                if (_imageManager.OriginalImage != null && _livePreviewCheck.Checked)
+                {
+                    ExecutePipeline();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"載入失敗: {ex.Message}", "錯誤", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 
