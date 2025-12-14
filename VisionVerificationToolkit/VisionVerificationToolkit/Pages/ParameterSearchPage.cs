@@ -35,6 +35,11 @@ public class ParameterSearchPage : UserControl
     private List<SearchResult> _searchResults = new();
     private readonly Random _random = new();
 
+    // 搜尋設定 (在UI執行緒捕獲，避免跨執行緒存取)
+    private int _searchTargetIndex;
+    private int _searchEvalTypeIndex;
+    private int _searchExpectedCount;
+
     public ParameterSearchPage(ImageManager imageManager, PipelineManager pipelineManager)
     {
         _imageManager = imageManager;
@@ -262,6 +267,11 @@ public class ParameterSearchPage : UserControl
             _progressLabel.Text = $"準備網格搜尋 {totalIterations} 組參數...";
         }
 
+        // 在UI執行緒捕獲設定值
+        _searchTargetIndex = _targetCombo.SelectedIndex;
+        _searchEvalTypeIndex = _evalTypeCombo.SelectedIndex;
+        _searchExpectedCount = (int)_expectedCountNum.Value;
+
         _cts = new CancellationTokenSource();
         _startButton.Enabled = false;
         _stopButton.Enabled = true;
@@ -470,13 +480,14 @@ public class ParameterSearchPage : UserControl
         {
             using var processed = ApplyPreprocessing(image, parameters);
 
-            switch (_targetCombo.SelectedIndex)
+            // 使用已捕獲的設定值，避免跨執行緒存取UI控件
+            switch (_searchTargetIndex)
             {
                 case 0: // 找圓 (霍夫)
                 case 1: // 找圓 (邊緣擬合)
                     var circleDetector = new CircleDetector
                     {
-                        Method = _targetCombo.SelectedIndex == 0 ? CircleDetectionMethod.Hough : CircleDetectionMethod.EdgeFitting,
+                        Method = _searchTargetIndex == 0 ? CircleDetectionMethod.Hough : CircleDetectionMethod.EdgeFitting,
                         Param1 = parameters.GetValueOrDefault("param1", 100),
                         Param2 = parameters.GetValueOrDefault("param2", 30),
                         Dp = parameters.GetValueOrDefault("dp", 1.0),
@@ -512,13 +523,12 @@ public class ParameterSearchPage : UserControl
         }
         catch { }
 
-        // 計算評分
-        int expectedCount = (int)_expectedCountNum.Value;
-        double score = _evalTypeCombo.SelectedIndex switch
+        // 計算評分 - 使用已捕獲的設定值
+        double score = _searchEvalTypeIndex switch
         {
-            0 => 1.0 - Math.Abs(detectedCount - expectedCount) / (double)Math.Max(1, expectedCount),
+            0 => 1.0 - Math.Abs(detectedCount - _searchExpectedCount) / (double)Math.Max(1, _searchExpectedCount),
             1 => quality,
-            _ => detectedCount == expectedCount ? 1.0 : 0
+            _ => detectedCount == _searchExpectedCount ? 1.0 : 0
         };
 
         return new SearchResult
