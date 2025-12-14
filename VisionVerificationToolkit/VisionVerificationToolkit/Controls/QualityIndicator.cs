@@ -87,7 +87,7 @@ public class QualityIndicator : Panel
         {
             Text = "整體評價：-",
             AutoSize = true,
-            Font = new Font(Font.FontFamily, 9, FontStyle.Bold),
+            Font = new Font("Microsoft JhengHei", 9, FontStyle.Bold),
             ForeColor = Color.DarkGreen
         };
         layout.Controls.Add(_overallLabel, 0, row);
