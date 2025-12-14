@@ -221,6 +221,22 @@ public class ParameterSearchPage : UserControl
             return;
         }
 
+        var parameters = GetSearchParameters();
+        if (parameters.Count == 0)
+        {
+            MessageBox.Show("請至少勾選一個參數進行搜尋", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var combinations = GenerateCombinations(parameters);
+        if (combinations.Count == 0)
+        {
+            MessageBox.Show("無法產生參數組合，請檢查參數範圍設定", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _progressLabel.Text = $"準備搜尋 {combinations.Count} 組參數...";
+
         _cts = new CancellationTokenSource();
         _startButton.Enabled = false;
         _stopButton.Enabled = true;
@@ -282,15 +298,27 @@ public class ParameterSearchPage : UserControl
         for (int i = 0; i < _paramGrid.Rows.Count; i++)
         {
             var row = _paramGrid.Rows[i];
-            bool enabled = (bool)(row.Cells[0].Value ?? false);
+
+            // 安全地取得 checkbox 值
+            var cellValue = row.Cells[0].Value;
+            bool enabled = cellValue != null && cellValue != DBNull.Value && Convert.ToBoolean(cellValue);
             if (!enabled) continue;
 
             string name = row.Cells[1].Value?.ToString() ?? "";
-            double start = Convert.ToDouble(row.Cells[2].Value ?? 0);
-            double end = Convert.ToDouble(row.Cells[3].Value ?? 0);
-            double step = Convert.ToDouble(row.Cells[4].Value ?? 1);
+            if (string.IsNullOrEmpty(name)) continue;
 
-            list.Add(new SearchParameter(name, start, end, step));
+            try
+            {
+                double start = Convert.ToDouble(row.Cells[2].Value ?? 0);
+                double end = Convert.ToDouble(row.Cells[3].Value ?? 0);
+                double step = Convert.ToDouble(row.Cells[4].Value ?? 1);
+
+                if (step <= 0) step = 1;
+                if (end < start) (start, end) = (end, start);
+
+                list.Add(new SearchParameter(name, start, end, step));
+            }
+            catch { }
         }
 
         return list;
